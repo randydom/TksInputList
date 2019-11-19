@@ -1,5 +1,7 @@
 # TksInputList
 
+List component for Firemonkey which supports embedded controls.
+
 ![Image of ksInputForm](https://kernow-s3.s3-eu-west-1.amazonaws.com/Development/screen.jpg)
 
 ***Note - I have not yet tested on Android, I have only been testing with Windows and iOS.***
