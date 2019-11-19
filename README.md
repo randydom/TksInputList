@@ -15,7 +15,7 @@ Here is the control running on an older iPhone XE device.
 https://kernow-s3.s3-eu-west-1.amazonaws.com/Development/RPReplay_Final1574173990.MP4
 
 
-Performance is acheieved by copying the controls to a bitmap during scrolling and repositioning the controls in the correct position once scrolling has completed.
+Performance is achieved by copying the controls to a bitmap during scrolling and repositioning the controls in the correct position once scrolling has completed.
 
 Currently supports
 - Item Selectors
