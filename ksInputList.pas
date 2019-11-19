@@ -302,6 +302,12 @@ type
     procedure Paint; override;
   end;
 
+  [ComponentPlatformsAttribute(
+    pidWin32 or
+    pidWin64 or
+    pidiOSSimulator32 or pidiOSSimulator64 or
+    pidiOSDevice32 or pidiOSDevice64
+    )]
   TksInputList = class(TVertScrollBox)
   private
     FPickerService: IFMXPickerService;
