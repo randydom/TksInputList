@@ -84,6 +84,7 @@ type
     FOnChange: TNotifyEvent;
     FSelected: Boolean;
     FShowSelection: Boolean;
+    FTagStr: string;
     function GetItemRect: TRectF;
     function GetAccessoryWidth(const AAddPadding: Boolean = False): single;
     procedure SetTitle(const Value: string);
@@ -111,7 +112,6 @@ type
     property ItemRect: TRectF read GetItemRect;
     property Selected: Boolean read FSelected write SetSelected default False;
     property ShowSelection: Boolean read FShowSelection write SetShowSelection default False;
-    property Value: string read GetValue write SetValue;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   public
     constructor Create(AInputList: TksInputList); virtual;
@@ -126,6 +126,8 @@ type
     property Detail: string read FDetail write SetDetail;
     property ClassID: string read GetClassID;
     property ID: string read FItemID write FItemID;
+    property Value: string read GetValue write SetValue;
+    property TagStr: string read FTagStr write FTagStr;
   end;
 
   TksInputListSeperator = class(TksBaseInputListItem)
@@ -1410,7 +1412,9 @@ end;
 
 procedure TksInputListItems.ItemChange(Sender: TObject);
 begin
-
+  if FksInputList.FUpdateCount > 0 then
+    Exit;
+  FksInputList.UpdateItemRects;
   FksInputList.InvalidateRect(FksInputList.ClipRect);
   FksInputList.ShowOnScreenControls;
 end;
@@ -1980,3 +1984,4 @@ finalization
   AAccessoriesList.Free;
 
 end.
+

@@ -87,6 +87,7 @@ procedure TfrmMain.FormCreate(Sender: TObject);
 var
   ICount: integer;
 begin
+  //ksInputList1.BeginUpdate;
   ksInputList1.Items.AddSeperator('SETTINGS');
   ksInputList1.Items.AddItemSelector('LOOKUP_1', Image1.Bitmap, 'Selector Item', '4', ['1','2','3','4','5','6','7','8','9','10']);
   ksInputList1.Items.AddEditBoxItem('PHONEEDIT_'+ICount.ToString, Image1.Bitmap, 'Phone Keyboard', '', 'NUMBER', TVirtualKeyboardType.PhonePad);
@@ -97,7 +98,7 @@ begin
   ksInputList1.Items.AddCheckBoxItem('CHECKBOX_2', Image1.Bitmap, 'Item 6', True);
   ksInputList1.Items.AddButtonItem('BUTTON_1', Image1.Bitmap, 'Item 7', 'Test');
   ksInputList1.Items.AddTrackBar('TRACKBAR_1', Image1.Bitmap, 'Item 8', 50, 100);
-
+  //ksInputList1.EndUpdate;
 end;
 
 procedure TfrmMain.ksInputList1ItemButtonClick(Sender: TObject;
