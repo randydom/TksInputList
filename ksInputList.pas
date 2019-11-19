@@ -102,6 +102,7 @@ type
     procedure LoadStructure(AJson: TJSONObject); virtual;
     procedure UpdateRects; virtual;
     procedure MouseDown; virtual;
+    procedure ItemClick; virtual;
     procedure MouseUp(ATapEvent: Boolean); virtual;
     procedure Changed; virtual;
     procedure Reset; virtual;
@@ -119,6 +120,7 @@ type
     procedure DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
     procedure SaveToJson(AJson: TJsonObject; AStructure, AData: Boolean);
     procedure LoadFromJson(AJson: TJsonObject; AStructure, AData: Boolean);
+    property Image: TBitmap read FImage;
     property Height: Single read FHeight write SetHeight;
     property Title: string read FTitle write SetTitle;
     property Detail: string read FDetail write SetDetail;
@@ -151,6 +153,7 @@ type
     FControl: TPresentedControl;
     FCached: TBitmap;
     FControlRect: TRectF;
+    FFullWidthSelect: Boolean;
   protected
     procedure UpdateRects; override;
     function CreateControl: TPresentedControl; virtual; abstract;
@@ -159,6 +162,7 @@ type
     procedure ClickControl; virtual;
     procedure Changed; override;
     procedure Reset; override;
+    procedure ItemClick; override;
   public
     constructor Create(AInputList: TksInputList); override;
     destructor Destroy; override;
@@ -182,6 +186,7 @@ type
     function CreateControl: TPresentedControl; override;
     procedure Reset; override;
     procedure ClickControl; override;
+    procedure MouseDown; override;
   public
     property Edit: TksEdit read GetEdit;
 
@@ -199,6 +204,7 @@ type
     procedure Reset; override;
 
   public
+    constructor Create(AInputList: TksInputList); override;
     property Switch: TSwitch read GetSwitch;
   end;
 
@@ -214,7 +220,9 @@ type
     procedure ClickControl; override;
     procedure Reset; override;
   public
+    constructor Create(AInputList: TksInputList); override;
     property CheckBox: TCheckBox read GetCheckBox;
+    //property FullWidthToggle: Boolean read FFullWidthToggle write FFullWidthToggle default
   end;
 
   TksInputListButtonItem = class(TksInputListItemWithControl)
@@ -289,7 +297,7 @@ type
                             APlaceholder: string;
                             const AKeyboard: TVirtualKeyboardType = TVirtualKeyboardType.Default): TksInputListEditItem;
     procedure AddSwitchItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean);
-    procedure AddCheckBoxItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean);
+    function AddCheckBoxItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean): TksInputListCheckBoxItem;
     procedure AddButtonItem(AID: string; AImg: TBitmap; ATitle, AButtonTitle: string);
     procedure AddTrackBar(AID: string; AImg: TBitmap; ATitle: string; APos, AMax: integer);
     procedure AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: array of string); overload;
@@ -370,6 +378,10 @@ type
   end;
 
   procedure Register;
+
+  function BmpToBase64(AImg: TBitmap): string;
+  procedure Base64ToBmp(AData: string; AImg: TBitmap);
+
 
 implementation
 
@@ -641,12 +653,15 @@ procedure TksInputList.EndUpdate;
 begin
   Dec(FUpdateCount);
   if FUpdateCount = 0 then
+  begin
     UpdateItemRects;
+
+  end;
 end;
 
 function TksInputList.GetIsScrolling: Boolean;
 begin
-  Result := ((FMousePos.Y) < (FMouseDownPos.Y - 10)) or ((FMousePos.Y) > (FMouseDownPos.Y + 10));
+  Result := ((FMousePos.Y) < (FMouseDownPos.Y - 4)) or ((FMousePos.Y) > (FMouseDownPos.Y + 4));
 end;
 
 procedure TksInputList.HideAllControls;
@@ -656,7 +671,7 @@ begin
   inherited;
   if (FUpdateCount > 0) or (FControlsVisible = False) then
     Exit;
-  BeginUpdate;
+  //BeginUpdate;
   try
     for AItem in FItems do
     begin
@@ -668,7 +683,7 @@ begin
     end;
     FControlsVisible := False;
   finally
-    EndUpdate;
+  //  EndUpdate;
   end;
 end;
 
@@ -795,6 +810,7 @@ begin
   inherited;
   FLastScrollChange := Now;
   HideAllControls;
+  HidePickers;
 end;
 
 procedure TksInputList.RedrawItems;
@@ -913,7 +929,7 @@ end;
 
 procedure TksBaseInputListItem.DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
 begin
-  ACanvas.Stroke.Color := claBlack;
+  ACanvas.Stroke.Color := claGray;
   ACanvas.Stroke.Kind := TBrushKind.Solid;
   ACanvas.Stroke.Thickness := 0.5;
   if ATop then ACanvas.DrawRectSides(FItemRect, 0, 0, AllCorners, 1, [TSide.Top]);
@@ -1014,6 +1030,11 @@ begin
   Result := '';
 end;
 
+procedure TksBaseInputListItem.ItemClick;
+begin
+  //
+end;
+
 procedure TksBaseInputListItem.LoadFromJson(AJson: TJsonObject; AStructure,
   AData: Boolean);
 begin
@@ -1046,7 +1067,7 @@ begin
   begin
     ATask := TTask.Create (procedure ()
     begin
-      Sleep(50);
+      Sleep(100);
       if FksInputList.IsScrolling then
         Exit;
       if FMouseDown then
@@ -1054,6 +1075,7 @@ begin
         TThread.Synchronize(nil,procedure
         begin
           Selected := True;
+          ItemClick;
         end);
       end;
     end);
@@ -1070,7 +1092,7 @@ begin
 
     aTask := TTask.Create (procedure ()
          begin
-           Sleep(200);
+           Sleep(250);
            FMouseDown := False;
            if (FSelected) then
            begin
@@ -1180,15 +1202,15 @@ begin
   FImageRect := FImageRect.Empty;
 
   FContentRect := FItemRect;
-  FContentRect.Left := FContentRect.Left + 8;
+  FContentRect.Left := FContentRect.Left + 10;
   FContentRect.Right := FContentRect.Right - C_RIGHT_MARGIN;
 
   // add image rect...
   if not FImage.IsEmpty then
   begin
     FImageRect := FContentRect;
-    FImageRect.Right := FContentRect.Left+32;
-    FContentRect.Left := FImageRect.Right;
+    FImageRect.Right := FContentRect.Left+36;
+    FContentRect.Left := FImageRect.Right+4;
   end;
 
   if FAccessory <> atNone then
@@ -1221,18 +1243,16 @@ begin
   ItemChange(Self);
 end;
 
-procedure TksInputListItems.AddCheckBoxItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean);
-var
-  AItem: TksInputListCheckBoxItem;
+function TksInputListItems.AddCheckBoxItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean): TksInputListCheckBoxItem;
 begin
-  AItem := TksInputListCheckBoxItem.Create(FksInputList);
-  AItem.FImage.Assign(AImg);
-  AItem.FItemID := AID;
-  AItem.Title := ATitle;
-  AItem.CheckBox.IsChecked := AState;
-  AItem.CheckBox.OnChange := AItem.CheckBoxChange;
-  AItem.OnChange := ItemChange;
-  Add(AItem);
+  Result := TksInputListCheckBoxItem.Create(FksInputList);
+  Result.FImage.Assign(AImg);
+  Result.FItemID := AID;
+  Result.Title := ATitle;
+  Result.CheckBox.IsChecked := AState;
+  Result.CheckBox.OnChange := Result.CheckBoxChange;
+  Result.OnChange := ItemChange;
+  Add(Result);
   ItemChange(Self);
 end;
 
@@ -1418,6 +1438,9 @@ function TksInputListEditItem.CreateControl: TPresentedControl;
 begin
   Result := TksEdit.Create(nil);
   (Result as TksEdit).Width := 150;
+  (Result as TksEdit).TextSettings.HorzAlign := TTextAlign.Center;
+  (Result as TksEdit).CanFocus := True;
+  (Result as TksEdit).DisableFocusEffect := False;
 end;
 
 class function TksInputListEditItem.GetClassID: string;
@@ -1433,6 +1456,13 @@ end;
 function TksInputListEditItem.GetValue: string;
 begin
   Result := Edit.Text;
+end;
+
+procedure TksInputListEditItem.MouseDown;
+begin
+  inherited;
+  //Edit.SetFocus;
+  //edit.SelStart := Edit.Text.Length;
 end;
 
 procedure TksInputListEditItem.LoadStructure(AJson: TJSONObject);
@@ -1482,7 +1512,6 @@ end;
 procedure TksInputListItemWithControl.ClickControl;
 begin
   FksInputList.HidePickers;
-  FControl.SetFocus;
 end;
 
 constructor TksInputListItemWithControl.Create(AInputList: TksInputList);
@@ -1493,6 +1522,7 @@ begin
   FControl.Parent := TempForm;
   FControl.ApplyStyleLookup;
   FCached := TBitmap.Create;
+  FFullWidthSelect := False;
 end;
 
 
@@ -1535,6 +1565,12 @@ begin
   ACanvas.DrawBitmap(FCached, Rect(0, 0, FCached.Width, FCached.Height), FControl.BoundsRect.PlaceInto(FControlRect, THorzRectAlign.Right), 1);
 end;
 
+procedure TksInputListItemWithControl.ItemClick;
+begin
+  if FFullWidthSelect then
+    ClickControl;
+end;
+
 procedure TksInputListItemWithControl.PaintControl(ACanvas: TCanvas);
 begin
   FControl.PaintTo(ACanvas, RectF(0, 0, FControl.Width, FControl.Height));
@@ -1562,6 +1598,12 @@ begin
 end;
 
 { TksInputListSwitchItem }
+
+constructor TksInputListSwitchItem.Create(AInputList: TksInputList);
+begin
+  inherited;
+
+end;
 
 function TksInputListSwitchItem.CreateControl: TPresentedControl;
 begin
@@ -1624,6 +1666,13 @@ begin
   CheckBox.IsChecked := not CheckBox.IsChecked;
 end;
 
+
+constructor TksInputListCheckBoxItem.Create(AInputList: TksInputList);
+begin
+  inherited;
+  FShowSelection := True;
+  FFullWidthSelect := True;
+end;
 
 function TksInputListCheckBoxItem.CreateControl: TPresentedControl;
 begin
@@ -1899,6 +1948,7 @@ end;
 procedure TksInputListSeperator.DrawToCanvas(ACanvas: TCanvas);
 begin
   FBackground := claNull;
+  ACanvas.Fill.Color := claGray;
   inherited;
 end;
 
