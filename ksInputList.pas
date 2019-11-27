@@ -35,6 +35,8 @@ uses System.Classes, FMX.Controls, FMX.InertialMovement, System.Types,
 
 const
   C_CORNER_RADIUS = 12;
+  C_DEFAULT_ITEM_HEIGHT = 44;
+  C_DEFAULT_SEPERATOR_HEIGHT = 44;
 
   {$IFDEF MSWINDOWS}
   C_SCREEN_SCALE = 1;
@@ -69,6 +71,7 @@ type
   private
     FksInputList: TksInputList;
     FItemID: string;
+    FFont: TFont;
     FItemRect: TRectF;
     FImageRect: TRectF;
     FContentRect: TRectF;
@@ -107,11 +110,9 @@ type
     procedure MouseUp(ATapEvent: Boolean); virtual;
     procedure Changed; virtual;
     procedure Reset; virtual;
-    property Accessory: TksInputAccessoryType read FAccessory write SetAccessory;
-    property BackgroundColor: TAlphaColor read FBackground write SetBackgroundColor;
+    procedure DoCustomDraw(ACanvas: TCanvas); virtual;
     property ItemRect: TRectF read GetItemRect;
     property Selected: Boolean read FSelected write SetSelected default False;
-    property ShowSelection: Boolean read FShowSelection write SetShowSelection default False;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   public
     constructor Create(AInputList: TksInputList); virtual;
@@ -120,6 +121,8 @@ type
     procedure DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
     procedure SaveToJson(AJson: TJsonObject; AStructure, AData: Boolean);
     procedure LoadFromJson(AJson: TJsonObject; AStructure, AData: Boolean);
+    property Accessory: TksInputAccessoryType read FAccessory write SetAccessory;
+    property BackgroundColor: TAlphaColor read FBackground write SetBackgroundColor;
     property Image: TBitmap read FImage;
     property Height: Single read FHeight write SetHeight;
     property Title: string read FTitle write SetTitle;
@@ -128,6 +131,7 @@ type
     property ID: string read FItemID write FItemID;
     property Value: string read GetValue write SetValue;
     property TagStr: string read FTagStr write FTagStr;
+    property ShowSelection: Boolean read FShowSelection write SetShowSelection default False;
   end;
 
   TksInputListSeperator = class(TksBaseInputListItem)
@@ -135,13 +139,16 @@ type
     class function GetClassID: string; override;
     function GetValue: string; override;
   public
+    constructor Create(AInputList: TksInputList); override;
     procedure DrawToCanvas(ACanvas: TCanvas); override;
   end;
 
   TksInputListItem = class(TksBaseInputListItem)
   protected
     class function GetClassID: string; override;
+    procedure UpdateRects; override;
   public
+    procedure DrawToCanvas(ACanvas: TCanvas); override;
     property Accessory;
     property BackgroundColor;
     property ItemRect;
@@ -261,6 +268,18 @@ type
     property TrackBar: TksTrackBar read GetTrackBar;
   end;
 
+  TksInputListImageItem = class(TksInputListItem)
+  protected
+    class function GetClassID: string; override;
+    procedure UpdateRects;
+    procedure DoCustomDraw(ACanvas: TCanvas); override;
+  public
+
+    constructor Create(AInputList: TksInputList); override;
+    destructor Destroy; override;
+    procedure DrawToCanvas(ACanvas: TCanvas); override;
+  end;
+
   TksInputListSelectorItem = class(TksBaseInputListItem)
   private
     FItems: TStrings;
@@ -292,7 +311,8 @@ type
     procedure ItemChange(Sender: TObject);
     procedure DrawToCanvas(ACanvas: TCanvas; AViewPort: TRectF);
     procedure AddSeperator(ATitle: string);
-    function AddItem(AID: string; AImg: TBitmap; ATitle: string): TksInputListItem;
+    function AddItem(AID: string; AImg: TBitmap; ATitle: string;
+                     const AAccessory: TksInputAccessoryType = atNone): TksInputListItem;
     function AddEditBoxItem(AID: string; AImg: TBitmap;
                             ATitle: string;
                             AValue: string;
@@ -302,8 +322,9 @@ type
     function AddCheckBoxItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean): TksInputListCheckBoxItem;
     procedure AddButtonItem(AID: string; AImg: TBitmap; ATitle, AButtonTitle: string);
     procedure AddTrackBar(AID: string; AImg: TBitmap; ATitle: string; APos, AMax: integer);
-    procedure AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: array of string); overload;
-    procedure AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: TStrings); overload;
+    function AddImageItem(AID: string; AImg: TBitmap): TksInputListImageItem;
+    function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: array of string): TksInputListSelectorItem overload;
+    function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: TStrings): TksInputListSelectorItem overload;
     property ItemByID[AID: string]: TksBaseInputListItem read GetItemByID;
   end;
 
@@ -338,12 +359,15 @@ type
     FOnCheckBoxChange: TksInputListCheckBoxChangeEvent;
     FOnItemButtonClick: TksInputListButtonClickEvent;
     FOnItemTrackBarChange: TksInputListTrackBarItemEvent;
+    FItemHeight: single;
     procedure UpdateItemRects;
     procedure RedrawItems;
     procedure CreateScrollMonitor;
     procedure ShowOnScreenControls;
     function GetIsScrolling: Boolean;
     procedure HidePickers;
+    function GetValue(AName: string): string;
+    procedure SetItemHeight(const Value: single);
   protected
     procedure Resize; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
@@ -366,10 +390,10 @@ type
 
     property IsScrolling: Boolean read GetIsScrolling;
     property Items: TksInputListItems read FItems;
-
+    property Value[AName: string]: string read GetValue;
   published
     property VScrollBar;
-
+    property ItemHeight: single read FItemHeight write SetItemHeight;
     property OnItemClick: TksInputListItemClickEvent read FOnItemClick write FOnItemClick;
     property OnSelectorItemSelected: TksInputListSelectorItemChangeEvent read FOnSelectorItemSelected write FOnSelectorItemSelected;
     property OnEditItemTextChange: TksInputListEditTextChangeEvent read FOnEditItemTextChange write FOnEditItemTextChange;
@@ -601,6 +625,7 @@ begin
   TPlatformServices.Current.SupportsPlatformService(IFMXPickerService, FPickerService);
 
   FControlsVisible := False;
+  FItemHeight := C_DEFAULT_ITEM_HEIGHT;
   FLastScrollPos := 0;
   FLastScrollChange := Now;
   FItems := TksInputListItems.Create(Self);
@@ -657,13 +682,25 @@ begin
   if FUpdateCount = 0 then
   begin
     UpdateItemRects;
-
+    ShowOnScreenControls;
   end;
 end;
 
 function TksInputList.GetIsScrolling: Boolean;
 begin
   Result := ((FMousePos.Y) < (FMouseDownPos.Y - 4)) or ((FMousePos.Y) > (FMouseDownPos.Y + 4));
+end;
+
+function TksInputList.GetValue(AName: string): string;
+var
+  AItem: TksBaseInputListItem;
+begin
+  Result := '';
+  AItem := FItems.ItemByID[AName];
+  if AItem <> nil then
+  begin
+    Result := AItem.Value;
+  end;
 end;
 
 procedure TksInputList.HideAllControls;
@@ -673,20 +710,16 @@ begin
   inherited;
   if (FUpdateCount > 0) or (FControlsVisible = False) then
     Exit;
-  //BeginUpdate;
-  try
-    for AItem in FItems do
+
+  for AItem in FItems do
+  begin
+    if AItem is TksInputListItemWithControl then
     begin
-      if AItem is TksInputListItemWithControl then
-      begin
-        TempForm.AddObject((AItem as TksInputListItemWithControl).FControl);
-        (AItem as TksInputListItemWithControl).FControl.ApplyStyleLookup;
-      end;
+      TempForm.AddObject((AItem as TksInputListItemWithControl).FControl);
+      (AItem as TksInputListItemWithControl).FControl.ApplyStyleLookup;
     end;
-    FControlsVisible := False;
-  finally
-  //  EndUpdate;
   end;
+  FControlsVisible := False;
 end;
 
 procedure TksInputList.HidePickers;
@@ -819,13 +852,13 @@ procedure TksInputList.RedrawItems;
 var
   r: TRectF;
 begin
-  BeginUpdate;
+  //BeginUpdate;
   try
     r := ClipRect;
     OffsetRect(r, 0, VScrollBarValue);
     FItems.DrawToCanvas(FCanvas.Canvas, r);
   finally
-    EndUpdate;
+  //  EndUpdate;
   end;
 end;
 
@@ -868,6 +901,16 @@ begin
   end;
 end;
 
+procedure TksInputList.SetItemHeight(const Value: single);
+begin
+  if FItemHeight <> Value then
+  begin
+    FItemHeight := Value;
+    UpdateItemRects;
+    ShowOnScreenControls;
+  end;
+end;
+
 procedure TksInputList.ShowOnScreenControls;
 var
   AItem: TksBaseInputListItem;
@@ -877,7 +920,7 @@ begin
 
   if FUpdateCount > 0 then
     Exit;
-  r := ClipRect;
+  r := ContentRect;
   OffsetRect(r, 0, VScrollBarValue);
 
   for AItem in FItems do
@@ -916,7 +959,8 @@ begin
   inherited Create;
   FksInputList := AInputList;
   FImage := TBitmap.Create;
-  FHeight := 50;
+  FFont := TFont.Create;
+  FHeight := FksInputList.ItemHeight;
   FItemID := '';
   FBackground := claWhite;
   FSelected := False;
@@ -926,19 +970,34 @@ end;
 destructor TksBaseInputListItem.Destroy;
 begin
   FImage.Free;
+  FFont.Free;
   inherited;
 end;
 
+procedure TksBaseInputListItem.DoCustomDraw(ACanvas: TCanvas);
+begin
+  //
+end;
+
 procedure TksBaseInputListItem.DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
+var
+  r: TRectF;
 begin
   ACanvas.Stroke.Color := claGray;
   ACanvas.Stroke.Kind := TBrushKind.Solid;
   ACanvas.Stroke.Thickness := 0.5;
-  if ATop then ACanvas.DrawRectSides(FItemRect, 0, 0, AllCorners, 1, [TSide.Top]);
-  if ABottom then
-  begin
-    ACanvas.DrawRectSides(FItemRect, 0, 0, AllCorners, 1, [TSide.Bottom]);
-  end;
+  r := FItemRect;
+
+  InflateRect(r, 0, (ACanvas.Stroke.Thickness / 2));
+  if ATop then ACanvas.DrawLine(r.TopLeft, PointF(r.Right, r.Top), 1);
+
+
+  //ACanvas.DrawRectSides(FItemRect, 0, 0, AllCorners, 1, [TSide.Top]);
+
+  //if ABottom then
+ // begin
+    //ACanvas.DrawRectSides(r, 0, 0, AllCorners, 1, [TSide.Bottom]);
+ // end;
 end;
 
 procedure TksBaseInputListItem.DrawToCanvas(ACanvas: TCanvas);
@@ -946,17 +1005,21 @@ var
   AState: TCanvasSaveState;
   AAccRect: TRectF;
   AAcc: TBitmap;
+  r: TRectF;
 begin
   UpdateRects;
   AState := ACanvas.SaveState;
   try
     ACanvas.IntersectClipRect(FItemRect);
     ACanvas.Fill.Color := FBackground;
-
+    ACanvas.Font.Assign(FFont);
     if (FSelected) and (FShowSelection) then
-      ACanvas.Fill.Color := claGainsboro;
+      ACanvas.Fill.Color := $FFEAEAEA;
 
-    ACanvas.FillRect(FItemRect, 0, 0, AllCorners, 1);
+    r := FItemRect;
+    InflateRect(r, 0, 0.5);
+    //r.Bottom := r.Bottom + 1;
+    ACanvas.FillRect(r, 0, 0, AllCorners, 1);
 
     {$IFDEF DEBUG_BOXES}
     ACanvas.Stroke.Color := claRed;
@@ -1002,10 +1065,16 @@ begin
       FImageRect.Inflate(-4, -4);
       ACanvas.DrawBitmap(FImage, FImage.BoundsF, FImage.BoundsF.PlaceInto(FImageRect),1, True);
     end;
-    ACanvas.Fill.Color := claBlack;
-    ACanvas.FillText(FContentRect, FTitle, False, 1, [], TTextAlign.Leading, TTextAlign.Center);
-
-    ACanvas.FillText(FContentRect, FDetail, False, 1, [], TTextAlign.Trailing, TTextAlign.Center);
+    if Trim(FTitle) <> '' then
+    begin
+      ACanvas.Fill.Color := claBlack;
+      ACanvas.FillText(FContentRect, FTitle, False, 1, [], TTextAlign.Leading, TTextAlign.Center);
+    end;
+    if Trim(FDetail) <> '' then
+    begin
+      ACanvas.FillText(FContentRect, FDetail, False, 1, [], TTextAlign.Trailing, TTextAlign.Center);
+    end;
+    DoCustomDraw(ACanvas);
   finally
     ACanvas.RestoreState(AState);
   end;
@@ -1212,7 +1281,7 @@ begin
   begin
     FImageRect := FContentRect;
     FImageRect.Right := FContentRect.Left+36;
-    FContentRect.Left := FImageRect.Right+4;
+    FContentRect.Left := FImageRect.Right+8;
   end;
 
   if FAccessory <> atNone then
@@ -1324,36 +1393,49 @@ begin
   ItemChange(Self);
 end;
 
-function TksInputListItems.AddItem(AID: string; AImg: TBitmap; ATitle: string): TksInputListItem;
+function TksInputListItems.AddImageItem(AID: string; AImg: TBitmap): TksInputListImageItem;
 begin
-  Result := TksInputListItem.Create(FksInputList);
+  Result := TksInputListImageItem.Create(FksInputList);
   Result.FItemID := AID;
   Result.FImage.Assign(AImg);
-  Result.Title := ATitle;
+
   Result.OnChange := ItemChange;
   Add(Result);
   ItemChange(Self);
 end;
 
-procedure TksInputListItems.AddItemSelector(AID: string; AImg: TBitmap; ATitle,
-  ASelected: string; AItems: TStrings);
-var
-  AItem: TksInputListSelectorItem;
+function TksInputListItems.AddItem(AID: string; AImg: TBitmap; ATitle: string;
+  const AAccessory: TksInputAccessoryType = atNone): TksInputListItem;
 begin
-  AItem := TksInputListSelectorItem.Create(FksInputList);
-  AItem.FItemID := AID;
-  AItem.Items.Assign(AItems);
-  AItem.FImage.Assign(AImg);
-  AItem.Title := ATitle;
-  AItem.Accessory := atMore;
-  AItem.Value := ASelected;
-  AItem.OnChange := ItemChange;
-  Add(AItem);
+  Result := TksInputListItem.Create(FksInputList);
+  Result.FItemID := AID;
+  Result.FImage.Assign(AImg);
+  Result.Title := ATitle;
+  if AAccessory <> atNone then
+    Result.ShowSelection := True;
+  Result.Accessory := AAccessory;
+  Result.OnChange := ItemChange;
+  Add(Result);
   ItemChange(Self);
 end;
 
-procedure TksInputListItems.AddItemSelector(AID: string; AImg: TBitmap; ATitle,
-  ASelected: string; AItems: array of string);
+function TksInputListItems.AddItemSelector(AID: string; AImg: TBitmap; ATitle,
+  ASelected: string; AItems: TStrings): TksInputListSelectorItem;
+begin
+  Result := TksInputListSelectorItem.Create(FksInputList);
+  Result.FItemID := AID;
+  Result.Items.Assign(AItems);
+  Result.FImage.Assign(AImg);
+  Result.Title := ATitle;
+  Result.Accessory := atMore;
+  Result.Value := ASelected;
+  Result.OnChange := ItemChange;
+  Add(Result);
+  ItemChange(Self);
+end;
+
+function TksInputListItems.AddItemSelector(AID: string; AImg: TBitmap; ATitle,
+  ASelected: string; AItems: array of string): TksInputListSelectorItem;
 var
   AStrings: TStrings;
   s: string;
@@ -1362,7 +1444,7 @@ begin
   try
     for s in AItems do
       AStrings.Add(s);
-    AddItemSelector(AId, AImg, ATitle, ASelected, AStrings);
+    Result := AddItemSelector(AId, AImg, ATitle, ASelected, AStrings);
   finally
     AStrings.Free;
   end;
@@ -1379,7 +1461,6 @@ var
   AItem: TksBaseInputListItem;
   ICount: integer;
 begin
-
   for AItem in Self do
   begin
     if IntersectRect(AViewPort, AItem.FItemRect) then
@@ -1390,7 +1471,9 @@ begin
   begin
     AItem := Items[ICount];
     if IntersectRect(AViewPort, AItem.FItemRect) then
-      AItem.DrawSeparators(ACanvas, True, ICount = Count-1);
+      if (not ((AItem is TksInputListSeperator) and (ICount = Count-1))) and
+         (not ((AItem is TksInputListSeperator) and (ICount = 0))) then
+        AItem.DrawSeparators(ACanvas, True, ICount = Count-1);
   end;
 
 end;
@@ -1402,7 +1485,8 @@ begin
   Result := nil;
   for AItem in Self do
   begin
-    if AItem.ID = AID then
+    if UpperCase(AItem.ID) = UpperCase(AID)
+     then
     begin
       Result := AItem;
       Exit;
@@ -1442,7 +1526,7 @@ function TksInputListEditItem.CreateControl: TPresentedControl;
 begin
   Result := TksEdit.Create(nil);
   (Result as TksEdit).Width := 150;
-  (Result as TksEdit).TextSettings.HorzAlign := TTextAlign.Center;
+  (Result as TksEdit).TextSettings.HorzAlign := TTextAlign.Trailing;
   (Result as TksEdit).CanFocus := True;
   (Result as TksEdit).DisableFocusEffect := False;
 end;
@@ -1578,6 +1662,8 @@ end;
 procedure TksInputListItemWithControl.PaintControl(ACanvas: TCanvas);
 begin
   FControl.PaintTo(ACanvas, RectF(0, 0, FControl.Width, FControl.Height));
+  //aCanvas.Stroke.Color := claBlack;
+  //ACanvas.DrawRect(RectF(0, 0, FControl.Width, FControl.Height), 0, 0, AllCorners, 1);
 end;
 
 
@@ -1949,11 +2035,29 @@ end;
 { TksInputListSeperator }
 
 
-procedure TksInputListSeperator.DrawToCanvas(ACanvas: TCanvas);
+constructor TksInputListSeperator.Create(AInputList: TksInputList);
 begin
-  FBackground := claNull;
-  ACanvas.Fill.Color := claGray;
   inherited;
+  FHeight := C_DEFAULT_SEPERATOR_HEIGHT;
+  FFont.Size := 11;
+
+end;
+
+procedure TksInputListSeperator.DrawToCanvas(ACanvas: TCanvas);
+var
+  AText: string;
+begin
+  AText := FTitle;
+  FTitle := '';
+  FBackground := claNull;
+  inherited DrawToCanvas(ACanvas);
+  FTitle := AText;
+  FBackground := claNull;
+  ACanvas.Fill.Color := claDimgray;
+  ACanvas.Font.Size := 11;
+  FContentRect.Inflate(0, -4);
+  ACanvas.FillText(FContentRect, FTitle, False, 1, [], TTextAlign.Leading, TTextAlign.Trailing);
+  FContentRect.Inflate(0, 4);
 end;
 
 class function TksInputListSeperator.GetClassID: string;
@@ -1968,9 +2072,59 @@ end;
 
 { TksInputListItem }
 
+procedure TksInputListItem.DrawToCanvas(ACanvas: TCanvas);
+begin
+  inherited DrawToCanvas(ACanvas);
+
+end;
+
 class function TksInputListItem.GetClassID: string;
 begin
   Result := '{4457C117-E5E0-41F3-9EC9-71BBB30C198D}';
+end;
+
+procedure TksInputListItem.UpdateRects;
+begin
+  inherited UpdateRects;
+  //FImageRect := RectF(0, 0, FksInputList.Width, Height);
+end;
+
+{ TksInputListImageItem }
+
+constructor TksInputListImageItem.Create(AInputList: TksInputList);
+begin
+  inherited;
+  FImage := TBitmap.Create;
+end;
+
+destructor TksInputListImageItem.Destroy;
+begin
+  FImage.Free;
+  inherited;
+end;
+
+procedure TksInputListImageItem.DoCustomDraw(ACanvas: TCanvas);
+begin
+  inherited;
+  ACanvas.DrawBitmap(FImage, FImage.BoundsF, FItemRect, 1, True);
+end;
+
+procedure TksInputListImageItem.DrawToCanvas(ACanvas: TCanvas);
+begin
+  inherited DrawToCanvas(ACanvas);
+
+end;
+
+class function TksInputListImageItem.GetClassID: string;
+begin
+  Result := '{E5E6CA88-3228-46BD-8A66-41E0EB674115}';
+end;
+
+procedure TksInputListImageItem.UpdateRects;
+begin
+  inherited UpdateRects;
+  FImageRect.Left := 0;
+  FImageRect.Width := FksInputList.Width;
 end;
 
 initialization
