@@ -66,3 +66,4 @@ __recovery/
 *.stat
 /*.res
 /Demos/Overview/*.res
+/*.tmp

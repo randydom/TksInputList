@@ -1,0 +1,49 @@
+object Form1: TForm1
+  Left = 0
+  Top = 0
+  Caption = 'Form1'
+  ClientHeight = 338
+  ClientWidth = 221
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  OnCreate = FormCreate
+  DesignerMasterStyle = 2
+  object ksInputList1: TksInputList
+    Align = Client
+    Size.Width = 221.000000000000000000
+    Size.Height = 250.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 2
+    ItemHeight = 44.000000000000000000
+    Viewport.Width = 221.000000000000000000
+    Viewport.Height = 250.000000000000000000
+  end
+  object ToolBar1: TToolBar
+    Size.Width = 221.000000000000000000
+    Size.Height = 44.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 1
+    object Label1: TLabel
+      Align = Center
+      AutoSize = True
+      StyledSettings = [Family, Style, FontColor]
+      Size.Width = 180.000000000000000000
+      Size.Height = 19.000000000000000000
+      Size.PlatformDefault = False
+      TextSettings.Font.Size = 14.000000000000000000
+      TextSettings.HorzAlign = Center
+      Text = 'RadioGroup Demo'
+      TabOrder = 1
+    end
+  end
+  object ToolBar2: TToolBar
+    Align = Bottom
+    Position.Y = 294.000000000000000000
+    Size.Width = 221.000000000000000000
+    Size.Height = 44.000000000000000000
+    Size.PlatformDefault = False
+    StyleLookup = 'bottomtoolbar'
+    TabOrder = 0
+  end
+end
