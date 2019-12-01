@@ -33,20 +33,6 @@ uses System.Classes, FMX.Controls, FMX.InertialMovement, System.Types,
 
   {.$DEFINE DEBUG_BOXES}
 
-const
-  C_CORNER_RADIUS = 12;
-  C_DEFAULT_ITEM_HEIGHT = 44;
-  C_DEFAULT_SEPERATOR_HEIGHT = 44;
-
-  {$IFDEF MSWINDOWS}
-  C_SCREEN_SCALE = 1;
-  C_RIGHT_MARGIN = 20;
-  {$ELSE}
-  C_SCREEN_SCALE = 2;
-  C_RIGHT_MARGIN = 8;
-  {$ENDIF}
-
-
 type
   TksInputList = class;
   TksBaseInputListItem = class;
@@ -81,6 +67,7 @@ type
     FHeight: single;
     FIndex: integer;
     FTitle: string;
+
     FDetail: string;
     FImage: TBitmap;
     FMouseDown: Boolean;
@@ -97,7 +84,6 @@ type
     procedure SetShowSelection(const Value: Boolean);
     procedure SetAccessory(const Value: TksInputAccessoryType);
     procedure SetDetail(const Value: string);
-
   protected
     class function GetClassID: string; virtual; abstract;
     function GetValue: string; virtual;
@@ -219,8 +205,10 @@ type
 
   TksInputListCheckBoxItem = class(TksInputListItemWithControl)
   private
+    FRadioGroupID: string;
     function GetCheckBox: TCheckBox;
     procedure CheckBoxChange(Sender: TObject);
+    procedure SetRadioGroupID(const Value: string);
   protected
     function CreateControl: TPresentedControl; override;
     class function GetClassID: string; override;
@@ -231,7 +219,7 @@ type
   public
     constructor Create(AInputList: TksInputList); override;
     property CheckBox: TCheckBox read GetCheckBox;
-    //property FullWidthToggle: Boolean read FFullWidthToggle write FFullWidthToggle default
+    property RadioGroupID: string read FRadioGroupID write SetRadioGroupID;
   end;
 
   TksInputListButtonItem = class(TksInputListItemWithControl)
@@ -271,7 +259,7 @@ type
   TksInputListImageItem = class(TksInputListItem)
   protected
     class function GetClassID: string; override;
-    procedure UpdateRects;
+    procedure UpdateRects; override;
     procedure DoCustomDraw(ACanvas: TCanvas); override;
   public
 
@@ -325,7 +313,11 @@ type
     function AddImageItem(AID: string; AImg: TBitmap): TksInputListImageItem;
     function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: array of string): TksInputListSelectorItem overload;
     function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: TStrings): TksInputListSelectorItem overload;
+    function AddRadioItem(AID: string; AImage: TBitmap; AGroupID, ATitle: string; AChecked: Boolean): TksInputListCheckBoxItem;
+    function ItemExists(AID: string): Boolean;
+
     property ItemByID[AID: string]: TksBaseInputListItem read GetItemByID;
+
   end;
 
   TksInputListCanvas = class(TPaintBox)
@@ -368,6 +360,8 @@ type
     procedure HidePickers;
     function GetValue(AName: string): string;
     procedure SetItemHeight(const Value: single);
+    function GetAsJson(AStructure, AData: Boolean): string;
+    procedure SetValue(AName: string; const Value: string);
   protected
     procedure Resize; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
@@ -388,9 +382,13 @@ type
     procedure LoadFromJson(AJson: TJsonObject; AStructure: Boolean; AData: Boolean); overload;
     procedure SaveToJson(AJson: TJsonObject; AStructure: Boolean; AData: Boolean); overload;
 
+    procedure ScrollToTop(const AAnimated: Boolean = False);
+    procedure ScrollToBottom(const AAnimated: Boolean = False);
+
     property IsScrolling: Boolean read GetIsScrolling;
     property Items: TksInputListItems read FItems;
-    property Value[AName: string]: string read GetValue;
+    property Value[AName: string]: string read GetValue write SetValue;
+    property AsJson[AStructure, AData: Boolean]: string read GetAsJson;
   published
     property VScrollBar;
     property ItemHeight: single read FItemHeight write SetItemHeight;
@@ -405,20 +403,27 @@ type
 
   procedure Register;
 
-  function BmpToBase64(AImg: TBitmap): string;
-  procedure Base64ToBmp(AData: string; AImg: TBitmap);
+  //function BmpToBase64(AImg: TBitmap): string;
+  //procedure Base64ToBmp(AData: string; AImg: TBitmap);
 
 
 implementation
 
-uses System.UIConsts, SysUtils, FMX.Forms, FMX.DialogService, DateUtils,
+uses System.UIConsts, SysUtils, FMX.Forms, FMX.DialogService, DateUtils, FMX.Ani,
   Math, FMX.Styles, FMX.Styles.Objects, System.NetEncoding, FMX.Platform;
 
-procedure Register;
-begin
-	RegisterComponents('Graham Murt', [TksInputList]);
-end;
+const
+  C_CORNER_RADIUS = 12;
+  C_DEFAULT_ITEM_HEIGHT = 44;
+  C_DEFAULT_SEPERATOR_HEIGHT = 44;
 
+  {$IFDEF MSWINDOWS}
+  C_SCREEN_SCALE = 1;
+  C_RIGHT_MARGIN = 20;
+  {$ELSE}
+  C_SCREEN_SCALE = 2;
+  C_RIGHT_MARGIN = 8;
+  {$ENDIF}
 
 type
   TInputListAccessoryImage = class
@@ -443,6 +448,11 @@ type
 var
   TempForm: TForm;
   AAccessoriesList: TInputListAccessoryImages;
+
+procedure Register;
+begin
+	RegisterComponents('Graham Murt', [TksInputList]);
+end;
 
 function AccessoryToStr(AAcc: TksInputAccessoryType): string;
 begin
@@ -510,6 +520,20 @@ begin
   finally
     AStream.Free;
     AEncoded.Free;
+  end;
+end;
+
+function TryGetBoolFromString(AValue: string): Boolean;
+var
+  AStrings: TStrings;
+begin
+  AValue := AValue.ToLower;
+  AStrings := TStringList.Create;
+  try
+    AStrings.CommaText := 'y,yes,t,true,1,on,checked';
+    Result := AStrings.IndexOf(AValue) > -1;
+  finally
+    AStrings.Free;
   end;
 end;
 
@@ -675,7 +699,6 @@ begin
   inherited;
 end;
 
-
 procedure TksInputList.EndUpdate;
 begin
   Dec(FUpdateCount);
@@ -683,6 +706,19 @@ begin
   begin
     UpdateItemRects;
     ShowOnScreenControls;
+  end;
+end;
+
+function TksInputList.GetAsJson(AStructure, AData: Boolean): string;
+var
+  AJson: TJSONObject;
+begin
+  AJson := TJSONObject.Create;
+  try
+    SaveToJson(AJson, AStructure, AData);
+    Result := AJson.ToJSON;
+  finally
+    AJson.Free;
   end;
 end;
 
@@ -901,6 +937,30 @@ begin
   end;
 end;
 
+procedure TksInputList.ScrollToBottom(const AAnimated: Boolean = False);
+var
+  ATime: Single;
+begin
+  case AAnimated of
+    True: ATime := 1;
+    False: ATime := 0;
+  end;
+  if VScrollBar <> nil then
+    TAnimator.AnimateFloat(Self, 'VScrollBar.Value', FCanvas.Height-Height, ATime, TAnimationType.InOut, TInterpolationType.Quadratic);
+end;
+
+procedure TksInputList.ScrollToTop(const AAnimated: Boolean = False);
+var
+  ATime: Single;
+begin
+  case AAnimated of
+    True: ATime := 1;
+    False: ATime := 0;
+  end;
+  if VScrollBar <> nil then
+    TAnimator.AnimateFloat(Self, 'VScrollBar.Value', 0, ATime, TAnimationType.InOut, TInterpolationType.Quadratic);
+end;
+
 procedure TksInputList.SetItemHeight(const Value: single);
 begin
   if FItemHeight <> Value then
@@ -908,6 +968,17 @@ begin
     FItemHeight := Value;
     UpdateItemRects;
     ShowOnScreenControls;
+  end;
+end;
+
+procedure TksInputList.SetValue(AName: string; const Value: string);
+var
+  AItem: TksBaseInputListItem;
+begin;
+  AItem := FItems.ItemByID[AName];
+  if AItem <> nil then
+  begin
+    AItem.Value := Value;
   end;
 end;
 
@@ -989,15 +1060,9 @@ begin
   r := FItemRect;
 
   InflateRect(r, 0, (ACanvas.Stroke.Thickness / 2));
+
   if ATop then ACanvas.DrawLine(r.TopLeft, PointF(r.Right, r.Top), 1);
-
-
-  //ACanvas.DrawRectSides(FItemRect, 0, 0, AllCorners, 1, [TSide.Top]);
-
-  //if ABottom then
- // begin
-    //ACanvas.DrawRectSides(r, 0, 0, AllCorners, 1, [TSide.Bottom]);
- // end;
+  if ABottom then  ACanvas.DrawLine(PointF(r.Left, r.Bottom), r.BottomRight, 1);
 end;
 
 procedure TksBaseInputListItem.DrawToCanvas(ACanvas: TCanvas);
@@ -1065,9 +1130,10 @@ begin
       FImageRect.Inflate(-4, -4);
       ACanvas.DrawBitmap(FImage, FImage.BoundsF, FImage.BoundsF.PlaceInto(FImageRect),1, True);
     end;
+
+    ACanvas.Fill.Color := claBlack;
     if Trim(FTitle) <> '' then
     begin
-      ACanvas.Fill.Color := claBlack;
       ACanvas.FillText(FContentRect, FTitle, False, 1, [], TTextAlign.Leading, TTextAlign.Center);
     end;
     if Trim(FDetail) <> '' then
@@ -1189,6 +1255,8 @@ begin
   //
 end;
 
+
+
 procedure TksBaseInputListItem.SaveStructure(AJson: TJsonObject);
 begin
   AJson.AddPair('class_id', GetClassID);
@@ -1218,6 +1286,8 @@ begin
   if FAccessory <> Value then
   begin
     FAccessory := Value;
+    if FAccessory = atMore then
+      FShowSelection := True;
     Changed;
   end;
 end;
@@ -1434,6 +1504,12 @@ begin
   ItemChange(Self);
 end;
 
+function TksInputListItems.AddRadioItem(AID: string; AImage: TBitmap; AGroupID, ATitle: string; AChecked: Boolean): TksInputListCheckBoxItem;
+begin
+  Result := AddCheckBoxItem(AID, AImage, ATitle, AChecked);
+  Result.RadioGroupID := AGroupID;
+end;
+
 function TksInputListItems.AddItemSelector(AID: string; AImg: TBitmap; ATitle,
   ASelected: string; AItems: array of string): TksInputListSelectorItem;
 var
@@ -1471,9 +1547,11 @@ begin
   begin
     AItem := Items[ICount];
     if IntersectRect(AViewPort, AItem.FItemRect) then
-      if (not ((AItem is TksInputListSeperator) and (ICount = Count-1))) and
-         (not ((AItem is TksInputListSeperator) and (ICount = 0))) then
-        AItem.DrawSeparators(ACanvas, True, ICount = Count-1);
+      //if (not ((AItem is TksInputListSeperator) and (ICount = Count-1))) and
+      if (not ((AItem is TksInputListSeperator) and (ICount = 0))) then
+        AItem.DrawSeparators(ACanvas,
+                             True,
+                             (ICount = Count-1) and (not(AItem is TksInputListSeperator)));
   end;
 
 end;
@@ -1501,6 +1579,11 @@ begin
   FksInputList.UpdateItemRects;
   FksInputList.InvalidateRect(FksInputList.ClipRect);
   FksInputList.ShowOnScreenControls;
+end;
+
+function TksInputListItems.ItemExists(AID: string): Boolean;
+begin
+  Result := ItemByID[AID] <> nil;
 end;
 
 { TksInputListCanvas }
@@ -1724,7 +1807,7 @@ end;
 procedure TksInputListSwitchItem.SetValue(const AValue: string);
 begin
   inherited;
-  Switch.IsChecked := StrToBool(AValue);
+  Switch.IsChecked := TryGetBoolFromString(AValue);
 end;
 
 procedure TksInputListSwitchItem.SwitchChange(Sender: TObject);
@@ -1736,7 +1819,9 @@ begin
      TThread.Synchronize(nil,procedure
       begin
         if Assigned(FksInputList.OnItemSwitchChanged) then
+        begin
           FksInputList.OnItemSwitchChanged(FksInputList, Self, ID, Switch.IsChecked);
+        end;
       end);
    end);
   ATask.Start;
@@ -1747,13 +1832,32 @@ end;
 procedure TksInputListCheckBoxItem.CheckBoxChange(Sender: TObject);
 begin
   if Assigned(FksInputList.OnItemCheckBoxChanged) then
+  begin
     FksInputList.OnItemCheckBoxChanged(FksInputList, Self, ID, CheckBox.IsChecked);
+  end;
 end;
 
 procedure TksInputListCheckBoxItem.ClickControl;
+var
+  AItem: TksBaseInputListItem;
+  cb: TksInputListCheckBoxItem;
 begin
   inherited;
+  if FRadioGroupID <> '' then
+  begin
+    for AItem in FksInputList.Items do
+    begin
+      if AItem is TksInputListCheckBoxItem then
+      begin
+        cb := (AItem as TksInputListCheckBoxItem);
+        cb.CheckBox.IsChecked := False;
+      end;
+    end;
+  end;
+  if (CheckBox.IsChecked) and (FRadioGroupID <> '') then
+    Exit;
   CheckBox.IsChecked := not CheckBox.IsChecked;
+
 end;
 
 
@@ -1792,10 +1896,18 @@ begin
   CheckBox.IsChecked := False;
 end;
 
+procedure TksInputListCheckBoxItem.SetRadioGroupID(const Value: string);
+begin
+  if FRadioGroupID <> Value then
+  begin
+    FRadioGroupID := Value;
+  end;
+end;
+
 procedure TksInputListCheckBoxItem.SetValue(const AValue: string);
 begin
   inherited;
-  CheckBox.IsChecked := StrToBool(AValue);
+  CheckBox.IsChecked := TryGetBoolFromString(AValue);
 end;
 
 { TksInputListButtonItem }
