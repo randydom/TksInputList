@@ -1,4 +1,4 @@
-{*******************************************************************************
+﻿{*******************************************************************************
 *                                                                              *
 *  TksInputList                                                                *
 *                                                                              *
@@ -29,9 +29,12 @@ interface
 uses System.Classes, FMX.Controls, FMX.InertialMovement, System.Types,
   System.Generics.Collections, FMX.Graphics, System.UITypes, FMX.Layouts, FMX.Types,
   FMX.Objects, FMX.Edit, FMX.StdCtrls, FMX.Controls.Presentation, System.Threading,
-  FMX.ListBox, Json, FMX.Pickers;
+  FMX.ListBox, Json, FMX.Pickers, System.UIConsts, FMX.TextLayout;
 
   {.$DEFINE DEBUG_BOXES}
+
+const
+  C_DEFAULT_SEPERATOR_HEIGHT = 44;
 
 type
   TksInputList = class;
@@ -46,6 +49,7 @@ type
   TksInputAccessoryType = (atNone, atMore, atCheckmark, atDetail);
 
   TksInputListItemClickEvent = procedure(Sender: TObject; AItem: TksBaseInputListItem; AID: string) of object;
+  TksInputListItemLongTapEvent = procedure(Sender: TObject; AItem: TksBaseInputListItem; AID: string) of object;
   TksInputListSelectorItemChangeEvent = procedure(Sender: TObject; AItem: TksInputListSelectorItem; AID, AValue: string) of object;
   TksInputListEditTextChangeEvent = procedure(Sender: TObject; AItem: TksInputListEditItem; AID, AText: string) of object;
   TksInputListSwitchChangeEvent = procedure(Sender: TObject; AItem: TksInputListSwitchItem; AID: string; AIsChecked: Boolean) of object;
@@ -75,6 +79,8 @@ type
     FSelected: Boolean;
     FShowSelection: Boolean;
     FTagStr: string;
+    FTagInt: integer;
+    FReadOnly: Boolean;
     function GetItemRect: TRectF;
     function GetAccessoryWidth(const AAddPadding: Boolean = False): single;
     procedure SetTitle(const Value: string);
@@ -84,8 +90,11 @@ type
     procedure SetShowSelection(const Value: Boolean);
     procedure SetAccessory(const Value: TksInputAccessoryType);
     procedure SetDetail(const Value: string);
+
   protected
     class function GetClassID: string; virtual; abstract;
+    function GetHeight: Single; virtual;
+    function GetDetailTextColor: TAlphaColor; virtual;
     function GetValue: string; virtual;
     procedure SetValue(const AValue: string); virtual;
     procedure SaveStructure(AJson: TJsonObject); virtual;
@@ -99,34 +108,43 @@ type
     procedure DoCustomDraw(ACanvas: TCanvas); virtual;
     property ItemRect: TRectF read GetItemRect;
     property Selected: Boolean read FSelected write SetSelected default False;
+    procedure SetReadOnly(const Value: Boolean); virtual;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   public
     constructor Create(AInputList: TksInputList); virtual;
     destructor Destroy; override;
     procedure DrawToCanvas(ACanvas: TCanvas); virtual;
+
     procedure DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
     procedure SaveToJson(AJson: TJsonObject; AStructure, AData: Boolean);
     procedure LoadFromJson(AJson: TJsonObject; AStructure, AData: Boolean);
     property Accessory: TksInputAccessoryType read FAccessory write SetAccessory;
     property BackgroundColor: TAlphaColor read FBackground write SetBackgroundColor;
     property Image: TBitmap read FImage;
-    property Height: Single read FHeight write SetHeight;
+    property Height: Single read GetHeight write SetHeight;
     property Title: string read FTitle write SetTitle;
     property Detail: string read FDetail write SetDetail;
     property ClassID: string read GetClassID;
     property ID: string read FItemID write FItemID;
     property Value: string read GetValue write SetValue;
     property TagStr: string read FTagStr write FTagStr;
+    property TagInt: integer read FTagInt write FTagInt;
     property ShowSelection: Boolean read FShowSelection write SetShowSelection default False;
+    property ReadOnly: Boolean read FReadOnly write SetReadOnly default False;
   end;
 
   TksInputListSeperator = class(TksBaseInputListItem)
+  private
+    FHorzAlign: TTextAlign;
+    procedure SetHorzAlign(const Value: TTextAlign);
+
   protected
     class function GetClassID: string; override;
     function GetValue: string; override;
   public
     constructor Create(AInputList: TksInputList); override;
     procedure DrawToCanvas(ACanvas: TCanvas); override;
+    property HorzAlign: TTextAlign read FHorzAlign write SetHorzAlign default TTextAlign.Leading;
   end;
 
   TksInputListItem = class(TksBaseInputListItem)
@@ -141,6 +159,54 @@ type
     property Selected;
     property ShowSelection;
   end;
+
+  TksInputListBadgeItem = class(TksInputListItem)
+  private
+    FBadgeColor: TAlphaColor;
+    FBadgeTextColor: TAlphaColor;
+  protected
+    class function GetClassID: string; override;
+    function GetDetailTextColor: TAlphaColor; override;
+  public
+    constructor Create(AInputList: TksInputList); override;
+    procedure DrawToCanvas(ACanvas: TCanvas); override;
+    property BadgeColor: TAlphaColor read FBadgeColor write FBadgeColor default claDodgerBlue;
+    property BadgeTextColor: TAlphaColor read FBadgeTextColor write FBadgeTextColor default claWhite;
+  end;
+
+  TksInputListChatItem = class(TksInputListItem)
+  private
+    FColor: TAlphaColor;
+    FTextColor: TAlphaColor;
+    FSender: string;
+    FBody: string;
+    FDateTime: TDateTime;
+    FCached: TBitmap;
+    FAlignment: TTextAlign;
+    function IsEmojiOnly: Boolean;
+    procedure SetSender(const Value: string);
+    procedure SetDateTime(const Value: TDateTime);
+    procedure SetBody(const Value: string);
+    function CalculateHeight: single;
+    procedure SetAlignment(const Value: TTextAlign);
+  protected
+    class function GetClassID: string; override;
+    procedure UpdateRects; override;
+    function GetHeight: Single; override;
+    procedure MouseDown; override;
+
+  public
+    constructor Create(AInputList: TksInputList); override;
+    destructor Destroy; override;
+    procedure DrawToCanvas(ACanvas: TCanvas); override;
+    property Color: TAlphaColor read FColor write FColor default claDodgerBlue;
+    property TextColor: TAlphaColor read FTextColor write FTextColor default claWhite;
+    property DateTime: TDateTime read FDateTime write SetDateTime;
+    property Sender: string read FSender write SetSender;
+    property Body: string read FBody write SetBody;
+    property Alignment: TTextAlign read FAlignment write SetAlignment default TTextAlign.Leading;
+  end;
+
 
 
   TksInputListItemWithControl = class(TksInputListItem)
@@ -174,6 +240,7 @@ type
     procedure TextChange(Sender: TObject);
   protected
     class function GetClassID: string; override;
+    procedure SetReadOnly(const Value: Boolean); override;
     procedure SaveStructure(AJson: TJsonObject); override;
     procedure LoadStructure(AJson: TJSONObject); override;
     function GetValue: string; override;
@@ -270,8 +337,12 @@ type
 
   TksInputListSelectorItem = class(TksBaseInputListItem)
   private
+
+    //FPickerService: IFMXPickerService;
     FItems: TStrings;
     FCombo: TComboBox;
+    ////FDatePicker: TCustomDateTimePicker;
+    //FTimePicker: TCustomDateTimePicker;
     FValue: string;
     procedure DoSelectorChanged(Sender: TObject);
     procedure SetItems(const Value: TStrings);
@@ -290,6 +361,34 @@ type
     property Value: string read GetValue write SetValue;
   end;
 
+  TksDateTimeSelectorKind = (ksDateSelector, ksTimeSelector);
+
+  TksInputListDateTimeSelectorItem = class(TksBaseInputListItem)
+  private
+    FPickerService: IFMXPickerService;
+    FDateTimePicker: TCustomDateTimePicker;
+    FDateTime: TDateTime;
+    FKind: TksDateTimeSelectorKind;
+    function GetDateTime: TDateTime;
+    procedure SetDateTime(const AValue: TDateTime);
+    procedure DoSelectDateTime(Sender: TObject; const ADateTime: TDateTime);
+    procedure SetKind(const Value: TksDateTimeSelectorKind);
+  protected
+    function GetValue: string; override;
+    procedure SetValue(const Value: string); override;
+
+    procedure SaveStructure(AJson: TJsonObject); override;
+    procedure LoadStructure(AJson: TJSONObject); override;
+    procedure MouseUp(ATapEvent: Boolean); override;
+    class function GetClassID: string; override;
+    procedure Reset; override;
+  public
+    constructor Create(AInputList: TksInputList); override;
+    destructor Destroy; override;
+    property DateTime: TDateTime read GetDateTime write SetDateTime;
+    property Kind: TksDateTimeSelectorKind read FKind write SetKind;
+  end;
+
   TksInputListItems = class(TObjectList<TksBaseInputListItem>)
   private
     FksInputList: TksInputList;
@@ -298,7 +397,7 @@ type
     constructor Create(AForm: TksInputList); virtual;
     procedure ItemChange(Sender: TObject);
     procedure DrawToCanvas(ACanvas: TCanvas; AViewPort: TRectF);
-    procedure AddSeperator(ATitle: string);
+    function AddSeperator(ATitle: string; const AHeight: integer = C_DEFAULT_SEPERATOR_HEIGHT): TksInputListSeperator;
     function AddItem(AID: string; AImg: TBitmap; ATitle: string;
                      const AAccessory: TksInputAccessoryType = atNone): TksInputListItem;
     function AddEditBoxItem(AID: string; AImg: TBitmap;
@@ -313,7 +412,11 @@ type
     function AddImageItem(AID: string; AImg: TBitmap): TksInputListImageItem;
     function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: array of string): TksInputListSelectorItem overload;
     function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: TStrings): TksInputListSelectorItem overload;
+    function AddDateSelector(AID: string; AImg: TBitmap; ATitle: string; ASelected: TDateTime): TksInputListDateTimeSelectorItem overload;
+    function AddTimeSelector(AID: string; AImg: TBitmap; ATitle: string; ASelected: TDateTime): TksInputListDateTimeSelectorItem overload;
     function AddRadioItem(AID: string; AImage: TBitmap; AGroupID, ATitle: string; AChecked: Boolean): TksInputListCheckBoxItem;
+    function AddBadgeItem(AID: string; AImage: TBitmap; ATitle, AValue: string; ABadgeColor, ABadgeTextColor: TAlphaColor): TksInputListBadgeItem;
+    function AddChatItem(AID, ASender, AText: string; ADateTime: TDateTime; AAlign: TTextAlign; AColor, ATextColor: TAlphaColor): TksInputListChatItem;
     function ItemExists(AID: string): Boolean;
 
     property ItemByID[AID: string]: TksBaseInputListItem read GetItemByID;
@@ -326,11 +429,7 @@ type
   end;
 
   [ComponentPlatformsAttribute(
-    pidWin32 or
-    pidWin64 or
-    pidiOSSimulator32 or pidiOSSimulator64 or
-    pidiOSDevice32 or pidiOSDevice64 or
-    pidAndroid32Arm or pidAndroid64Arm
+    pidAllPlatforms
     )]
   TksInputList = class(TVertScrollBox)
   private
@@ -342,17 +441,21 @@ type
     FControlsVisible: Boolean;
     FUpdateCount: integer;
     FLastScrollChange: TDateTime;
+    FMouseDownTime: Cardinal;
+
     FMouseDownPos: TPointF;
     FMousePos: TPointF;
     FMouseDownItem: TksBaseInputListItem;
     FOnSelectorItemSelected: TksInputListSelectorItemChangeEvent;
     FOnEditItemTextChange: TksInputListEditTextChangeEvent;
     FOnItemClick: TksInputListItemClickEvent;
+    FOnItemLongTap: TksInputListItemLongTapEvent;
     FOnSwitchChange: TksInputListSwitchChangeEvent;
     FOnCheckBoxChange: TksInputListCheckBoxChangeEvent;
     FOnItemButtonClick: TksInputListButtonClickEvent;
     FOnItemTrackBarChange: TksInputListTrackBarItemEvent;
     FItemHeight: single;
+    FShowDividers: Boolean;
     procedure UpdateItemRects;
     procedure RedrawItems;
     procedure CreateScrollMonitor;
@@ -363,6 +466,7 @@ type
     procedure SetItemHeight(const Value: single);
     function GetAsJson(AStructure, AData: Boolean): string;
     procedure SetValue(AName: string; const Value: string);
+    procedure SetShowDividers(const Value: Boolean);
   protected
     procedure Resize; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
@@ -385,15 +489,16 @@ type
 
     procedure ScrollToTop(const AAnimated: Boolean = False);
     procedure ScrollToBottom(const AAnimated: Boolean = False);
-
     property IsScrolling: Boolean read GetIsScrolling;
     property Items: TksInputListItems read FItems;
     property Value[AName: string]: string read GetValue write SetValue;
     property AsJson[AStructure, AData: Boolean]: string read GetAsJson;
   published
     property VScrollBar;
+    property ShowDividers: Boolean read FShowDividers write SetShowDividers default True;
     property ItemHeight: single read FItemHeight write SetItemHeight;
     property OnItemClick: TksInputListItemClickEvent read FOnItemClick write FOnItemClick;
+    property OnItemLongTapClick: TksInputListItemLongTapEvent read FOnItemLongTap write FOnItemLongTap;
     property OnSelectorItemSelected: TksInputListSelectorItemChangeEvent read FOnSelectorItemSelected write FOnSelectorItemSelected;
     property OnEditItemTextChange: TksInputListEditTextChangeEvent read FOnEditItemTextChange write FOnEditItemTextChange;
     property OnItemSwitchChanged: TksInputListSwitchChangeEvent read FOnSwitchChange write FOnSwitchChange;
@@ -404,19 +509,15 @@ type
 
   procedure Register;
 
-  //function BmpToBase64(AImg: TBitmap): string;
-  //procedure Base64ToBmp(AData: string; AImg: TBitmap);
-
 
 implementation
 
-uses System.UIConsts, SysUtils, FMX.Forms, FMX.DialogService, DateUtils, FMX.Ani,
-  Math, FMX.Styles, FMX.Styles.Objects, System.NetEncoding, FMX.Platform;
+uses SysUtils, FMX.Forms, FMX.DialogService, DateUtils, FMX.Ani,
+  Math, FMX.Styles, FMX.Styles.Objects, System.NetEncoding, FMX.Platform, System.Character;
 
 const
   C_CORNER_RADIUS = 12;
   C_DEFAULT_ITEM_HEIGHT = 44;
-  C_DEFAULT_SEPERATOR_HEIGHT = 44;
 
   {$IFDEF MSWINDOWS}
   C_SCREEN_SCALE = 1;
@@ -449,6 +550,7 @@ type
 var
   TempForm: TForm;
   AAccessoriesList: TInputListAccessoryImages;
+  ATextLayout: TTextLayout;
 
 procedure Register;
 begin
@@ -656,14 +758,13 @@ begin
   FItems := TksInputListItems.Create(Self);
   FCanvas := TksInputListCanvas.Create(Self);
   FCanvas.Align := TAlignLayout.Top;
-
+  FShowDividers := True;
   FCanvas.HitTest := False;
   FCanvas.Stored := False;
   AddObject(FCanvas);
   UpdateItemRects;
 
   CreateScrollMonitor;
-
 
 end;
 
@@ -702,11 +803,18 @@ end;
 
 procedure TksInputList.EndUpdate;
 begin
-  Dec(FUpdateCount);
+  if FUpdateCount > 0 then
+    Dec(FUpdateCount);
   if FUpdateCount = 0 then
   begin
     UpdateItemRects;
+    {$IFNDEF MSWINDOWS}
+    RedrawItems;
+    {$ENDIF}
+    HideAllControls;
+    HidePickers;
     ShowOnScreenControls;
+    InvalidateRect(ClipRect);
   end;
 end;
 
@@ -819,8 +927,9 @@ begin
   inherited;
   HidePickers;
   y := y + VScrollBarValue;
-  Root.SetFocused(nil);
 
+  Root.SetFocused(nil);
+  FMouseDownTime := MilliSecondOfTheDay(Now);
   FMouseDownPos := PointF(X, Y);
   FMousePos := FMouseDownPos;
   for AItem in FItems do
@@ -845,6 +954,7 @@ procedure TksInputList.MouseUp(Button: TMouseButton; Shift: TShiftState; X,
   Y: Single);
 var
   ATapEvent: Boolean;
+  ADelay: cardinal;
 begin
   inherited;
   y := y + VScrollBarValue;
@@ -852,6 +962,23 @@ begin
   if FMouseDownItem <> nil then
   begin
     FMouseDownItem.MouseUp(ATapEvent);
+
+    if ATapEvent then
+    begin
+      ADelay := MilliSecondOfTheDay(Now);
+
+      if ADelay - FMouseDownTime > 500 then
+      begin
+        if Assigned(OnItemLongTapClick) then
+          OnItemLongTapClick(Self, FMouseDownItem, FMouseDownItem.ID);
+      end
+      else
+      begin
+        if Assigned(OnItemClick) then
+          OnItemClick(Self, FMouseDownItem, FMouseDownItem.ID);
+        end;
+    end;
+
     FMouseDownItem := nil;
   end;
 end;
@@ -889,14 +1016,9 @@ procedure TksInputList.RedrawItems;
 var
   r: TRectF;
 begin
-  //BeginUpdate;
-  try
-    r := ClipRect;
-    OffsetRect(r, 0, VScrollBarValue);
-    FItems.DrawToCanvas(FCanvas.Canvas, r);
-  finally
-  //  EndUpdate;
-  end;
+  r := ClipRect;
+  OffsetRect(r, 0, VScrollBarValue);
+  FItems.DrawToCanvas(FCanvas.Canvas, r);
 end;
 
 procedure TksInputList.Reset;
@@ -932,9 +1054,12 @@ begin
   AJson.AddPair('items', AArray);
   for AItem in FItems do
   begin
-    AObj := TJSONObject.Create;
-    AItem.SaveToJson(AObj, AStructure, AData);
-    AArray.Add(AObj);
+    if (AStructure) or (not (AItem is TksInputListSeperator)) then
+    begin
+      AObj := TJSONObject.Create;
+      AItem.SaveToJson(AObj, AStructure, AData);
+      AArray.Add(AObj);
+    end;
   end;
 end;
 
@@ -942,12 +1067,28 @@ procedure TksInputList.ScrollToBottom(const AAnimated: Boolean = False);
 var
   ATime: Single;
 begin
-  case AAnimated of
-    True: ATime := 1;
-    False: ATime := 0;
-  end;
-  if VScrollBar <> nil then
-    TAnimator.AnimateFloat(Self, 'VScrollBar.Value', FCanvas.Height-Height, ATime, TAnimationType.InOut, TInterpolationType.Quadratic);
+  {ATask := TTask.Create (procedure ()
+  begin
+    TThread.Synchronize(nil,procedure
+    begin    }
+      AniCalculations.UpdatePosImmediately(True);
+      case AAnimated of
+        True: ATime := 0.4;
+        False: ATime := 0;
+      end;
+
+      if VScrollBar <> nil then
+      begin
+        //VScrollBar.Max
+        case AAnimated of
+          False: VScrollBar.Value := VScrollBar.Max;
+          True: TAnimator.AnimateFloat(Self, 'VScrollBar.Value', {FCanvas.Height-Height} VScrollBar.Max, ATime, TAnimationType.InOut, TInterpolationType.Quadratic);
+        end;
+
+      end;
+   { end);
+  end);
+  ATask.Start;   }
 end;
 
 procedure TksInputList.ScrollToTop(const AAnimated: Boolean = False);
@@ -969,6 +1110,15 @@ begin
     FItemHeight := Value;
     UpdateItemRects;
     ShowOnScreenControls;
+  end;
+end;
+
+procedure TksInputList.SetShowDividers(const Value: Boolean);
+begin
+  if FShowDividers <> Value then
+  begin
+    FShowDividers := Value;
+    RedrawItems;
   end;
 end;
 
@@ -1037,6 +1187,7 @@ begin
   FBackground := claWhite;
   FSelected := False;
   FShowSelection := False;
+  FReadOnly := False;
 end;
 
 destructor TksBaseInputListItem.Destroy;
@@ -1050,6 +1201,7 @@ procedure TksBaseInputListItem.DoCustomDraw(ACanvas: TCanvas);
 begin
   //
 end;
+
 
 procedure TksBaseInputListItem.DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
 var
@@ -1079,7 +1231,7 @@ begin
     ACanvas.IntersectClipRect(FItemRect);
     ACanvas.Fill.Color := FBackground;
     ACanvas.Font.Assign(FFont);
-    if (FSelected) and (FShowSelection) then
+    if ((FSelected) and (FShowSelection)) and (not FReadOnly) then
       ACanvas.Fill.Color := $FFEAEAEA;
 
     r := FItemRect;
@@ -1103,8 +1255,7 @@ begin
     ACanvas.DrawRect(FImageRect, C_CORNER_RADIUS, C_CORNER_RADIUS, AllCorners, 1);
     {$ENDIF}
 
-
-    if FAccessory <> atNone then
+    if (FAccessory <> atNone) and (FReadOnly = False) then
     begin
       AAcc := AAccessoriesList.ItemByAccessory[FAccessory].Bitmap;
       if AAcc <> nil then
@@ -1139,6 +1290,7 @@ begin
     end;
     if Trim(FDetail) <> '' then
     begin
+      ACanvas.Fill.Color := GetDetailTextColor;
       ACanvas.FillText(FContentRect, FDetail, False, 1, [], TTextAlign.Trailing, TTextAlign.Center);
     end;
     DoCustomDraw(ACanvas);
@@ -1156,6 +1308,16 @@ begin
     if AAddPadding then
       Result := Result + 4;
   end;
+end;
+
+function TksBaseInputListItem.GetDetailTextColor: TAlphaColor;
+begin
+  Result := claBlack;
+end;
+
+function TksBaseInputListItem.GetHeight: Single;
+begin
+  Result := FHeight;
 end;
 
 function TksBaseInputListItem.GetItemRect: TRectF;
@@ -1201,7 +1363,7 @@ var
   ATask: ITask;
 begin
   FMouseDown := True;
-  if FShowSelection then
+
   begin
     ATask := TTask.Create (procedure ()
     begin
@@ -1212,7 +1374,8 @@ begin
       begin
         TThread.Synchronize(nil,procedure
         begin
-          Selected := True;
+          if FShowSelection then
+            Selected := True;
           ItemClick;
         end);
       end;
@@ -1232,17 +1395,13 @@ begin
          begin
            Sleep(250);
            FMouseDown := False;
-           if (FSelected) then
+
            begin
              TThread.Synchronize(nil,procedure
                           begin
-                          Selected := False;
-                          if ATapEvent then
-                          begin
-                            if Assigned(FksInputList.OnItemClick) then
-                              FksInputList.OnItemClick(FksInputList, Self, ID);
-                          end
 
+                          if (FSelected) then
+                            Selected := False;
               end);
              end;
          end);
@@ -1314,6 +1473,17 @@ begin
   Changed;
 end;
 
+procedure TksBaseInputListItem.SetReadOnly(const Value: Boolean);
+begin
+  if FReadOnly <> Value then
+  begin
+    if Value then
+      FShowSelection := False;
+    FReadOnly := Value;
+    Changed;
+  end;
+end;
+
 procedure TksBaseInputListItem.SetSelected(const Value: Boolean);
 begin
   FSelected := Value;
@@ -1355,18 +1525,36 @@ begin
     FContentRect.Left := FImageRect.Right+8;
   end;
 
-  if FAccessory <> atNone then
+  if (FAccessory <> atNone) and (not ((FAccessory = atMore) and (FReadOnly))) then
   begin
     // add accessory rect
     AAccessoryWidth := GetAccessoryWidth(False);
     FAccessoryRect := FContentRect;
     FAccessoryRect.Left := FContentRect.Right-AAccessoryWidth;
     FContentRect.Right := FAccessoryRect.Left;
-  end;
-
+  end
+  {$IFNDEF MSWINDOWS}
+  else
+    FContentRect.Right := FContentRect.Right - 6;
+  {$ENDIF}
 end;
 
 { TksInputListItems }
+
+function TksInputListItems.AddBadgeItem(AID: string; AImage: TBitmap; ATitle, AValue: string;
+  ABadgeColor, ABadgeTextColor: TAlphaColor): TksInputListBadgeItem;
+begin
+  Result := TksInputListBadgeItem.Create(FksInputList);
+  Result.FItemID := AID;
+  Result.FImage.Assign(AImage);
+  Result.Title := ATitle;
+  Result.Detail := AValue;
+  Result.BadgeColor := ABadgeColor;
+  Result.BadgeTextColor := ABadgeTextColor;
+  Result.OnChange := ItemChange;
+  Add(Result);
+  ItemChange(Self);
+end;
 
 procedure TksInputListItems.AddButtonItem(AID: string; AImg: TBitmap; ATitle,
   AButtonTitle: string);
@@ -1382,6 +1570,39 @@ begin
   AItem.Button.CanFocus := False;
   AItem.OnChange := ItemChange;
   Add(AItem);
+  ItemChange(Self);
+end;
+
+function TksInputListItems.AddChatItem(AID, ASender, AText: string; ADateTime: TDateTime; AAlign: TTextAlign; AColor, ATextColor: TAlphaColor): TksInputListChatItem;
+var
+  AStr: string;
+  ATone: integer;
+begin
+  Result := TksInputListChatItem.Create(FksInputList);
+  Result.FItemID := AID;
+  Result.Color := AColor;
+
+  AStr := AText;
+
+  for ATone := 57339 to 57344 do
+    if Pos(Chr(ATone), AStr) > 0 then System.Delete(AStr, Pos(Chr(ATone), AStr)-1, 2); //StringReplace(s, Chr(57339), '', [rfReplaceAll]);
+
+
+  if Pos(Chr(8205), AStr) > 0 then System.Delete(AStr, Pos(Chr(8205), AStr), 3); //StringReplace(s, Chr(57339), '', [rfReplaceAll]);
+
+
+
+  AStr := StringReplace(AStr, '‍♂️', '', [rfReplaceAll]);
+  AStr := StringReplace(AStr, '♀️', '', [rfReplaceAll]);
+
+  AStr := Trim(AStr);
+  Result.TextColor := ATextColor;
+  Result.Body := AStr;
+  Result.DateTime := ADateTime;
+  Result.Sender := ASender;
+  Result.Alignment := AAlign;
+  Result.OnChange := ItemChange;
+  Add(Result);
   ItemChange(Self);
 end;
 
@@ -1420,14 +1641,13 @@ begin
   ItemChange(Self);
 end;
 
-procedure TksInputListItems.AddSeperator(ATitle: string);
-var
-  AItem: TksInputListSeperator;
+function TksInputListItems.AddSeperator(ATitle: string; const AHeight: integer = C_DEFAULT_SEPERATOR_HEIGHT): TksInputListSeperator;
 begin
-  AItem := TksInputListSeperator.Create(FksInputList);
-  AItem.FItemID := GuidToString(TGUID.NewGuid);
-  AItem.Title := ATitle;
-  Add(AItem);
+  Result := TksInputListSeperator.Create(FksInputList);
+  Result.Height := AHeight;
+  Result.FItemID := GuidToString(TGUID.NewGuid);
+  Result.Title := ATitle;
+  Add(Result);
   ItemChange(Self);
 end;
 
@@ -1505,6 +1725,35 @@ begin
   ItemChange(Self);
 end;
 
+function TksInputListItems.AddDateSelector(AID: string; AImg: TBitmap; ATitle: string; ASelected: TDateTime): TksInputListDateTimeSelectorItem overload;
+begin
+  Result := TksInputListDateTimeSelectorItem.Create(FksInputList);
+  Result.FItemID := AID;
+  Result.DateTime := ASelected;
+  Result.FImage.Assign(AImg);
+  Result.Title := ATitle;
+  Result.Accessory := atMore;
+  Result.OnChange := ItemChange;
+  Result.Kind := ksDateSelector;
+  Add(Result);
+  ItemChange(Self);
+end;
+
+function TksInputListItems.AddTimeSelector(AID: string; AImg: TBitmap; ATitle: string; ASelected: TDateTime): TksInputListDateTimeSelectorItem overload;
+begin
+  Result := TksInputListDateTimeSelectorItem.Create(FksInputList);
+  Result.FItemID := AID;
+  Result.Kind := ksTimeSelector;
+
+  Result.DateTime := ASelected;
+  Result.FImage.Assign(AImg);
+  Result.Title := ATitle;
+  Result.Accessory := atMore;
+  Result.OnChange := ItemChange;
+  Add(Result);
+  ItemChange(Self);
+end;
+
 function TksInputListItems.AddRadioItem(AID: string; AImage: TBitmap; AGroupID, ATitle: string; AChecked: Boolean): TksInputListCheckBoxItem;
 begin
   Result := AddCheckBoxItem(AID, AImage, ATitle, AChecked);
@@ -1544,15 +1793,18 @@ begin
       AItem.DrawToCanvas(ACanvas);
   end;
 
-  for ICount := 0 to Count-1 do
+  if FksInputList.ShowDividers then
   begin
-    AItem := Items[ICount];
-    if IntersectRect(AViewPort, AItem.FItemRect) then
-      //if (not ((AItem is TksInputListSeperator) and (ICount = Count-1))) and
-      if (not ((AItem is TksInputListSeperator) and (ICount = 0))) then
-        AItem.DrawSeparators(ACanvas,
-                             True,
-                             (ICount = Count-1) and (not(AItem is TksInputListSeperator)));
+    for ICount := 0 to Count-1 do
+    begin
+      AItem := Items[ICount];
+      if IntersectRect(AViewPort, AItem.FItemRect) then
+        //if (not ((AItem is TksInputListSeperator) and (ICount = Count-1))) and
+        if (not ((AItem is TksInputListSeperator) and (ICount = 0))) then
+          AItem.DrawSeparators(ACanvas,
+                               True,
+                               (ICount = Count-1) and (not(AItem is TksInputListSeperator)));
+    end;
   end;
 
 end;
@@ -1600,16 +1852,15 @@ end;
 
 procedure TksInputListEditItem.ClickControl;
 begin
-  inherited;
-  TEdit(FControl).SelStart := TEdit(FControl).Text.Length;
-
+  inherited ClickControl;
 end;
 
 
 function TksInputListEditItem.CreateControl: TPresentedControl;
 begin
-  Result := TksEdit.Create(nil);
-  (Result as TksEdit).Width := 150;
+  Result := TksEdit.Create(FksInputList);
+  (Result as TksEdit).ApplyStyle;
+  (Result as TksEdit).Width := FksInputList.Width / 2;
   (Result as TksEdit).TextSettings.HorzAlign := TTextAlign.Trailing;
   (Result as TksEdit).CanFocus := True;
   (Result as TksEdit).DisableFocusEffect := False;
@@ -1633,8 +1884,7 @@ end;
 procedure TksInputListEditItem.MouseDown;
 begin
   inherited;
-  //Edit.SetFocus;
-  //edit.SelStart := Edit.Text.Length;
+
 end;
 
 procedure TksInputListEditItem.LoadStructure(AJson: TJSONObject);
@@ -1654,6 +1904,22 @@ begin
   inherited;
   AJson.AddPair('keyboard', IntToStr(Ord(Edit.KeyboardType)));
 
+end;
+
+procedure TksInputListEditItem.SetReadOnly(const Value: Boolean);
+begin
+  if Value <> FReadOnly then
+  begin
+    FReadOnly := Value;
+    //case Value of
+    //  True: Edit.StyleLookup := '';
+    //  False: Edit.StyleLookup := 'clearingeditstyle';
+    //end;
+    Edit.CanFocus := not ReadOnly;
+    Edit.HitTest := not ReadOnly;
+    Edit.ReadOnly := ReadOnly;
+    Changed;
+  end;
 end;
 
 procedure TksInputListEditItem.SetValue(const AValue: string);
@@ -1683,7 +1949,7 @@ end;
 
 procedure TksInputListItemWithControl.ClickControl;
 begin
-  FksInputList.HidePickers;
+  //FksInputList.HidePickers;
 end;
 
 constructor TksInputListItemWithControl.Create(AInputList: TksInputList);
@@ -1739,15 +2005,13 @@ end;
 
 procedure TksInputListItemWithControl.ItemClick;
 begin
-  if FFullWidthSelect then
+  if (FFullWidthSelect) and (not ReadOnly) then
     ClickControl;
 end;
 
 procedure TksInputListItemWithControl.PaintControl(ACanvas: TCanvas);
 begin
   FControl.PaintTo(ACanvas, RectF(0, 0, FControl.Width, FControl.Height));
-  //aCanvas.Stroke.Color := claBlack;
-  //ACanvas.DrawRect(RectF(0, 0, FControl.Width, FControl.Height), 0, 0, AllCorners, 1);
 end;
 
 
@@ -2026,11 +2290,14 @@ end;
 constructor TksInputListSelectorItem.Create(AInputList: TksInputList);
 begin
   inherited;
+  
+
   FCombo := TComboBox.Create(nil);
   TempForm.AddObject(FCombo);
   FItems := TStringList.Create;
   FShowSelection := True;
   FCombo.OnChange := DoSelectorChanged;
+
 end;
 
 destructor TksInputListSelectorItem.Destroy;
@@ -2061,6 +2328,13 @@ end;
 procedure TksInputListSelectorItem.LoadStructure(AJson: TJSONObject);
 begin
   inherited;
+{  FType := ksItemSelector;
+  if AJson.FindValue('type') <> nil then
+  begin
+    if AJson.Values['type'].Value = 'date' then FType := ksDateSelector;
+    if AJson.Values['type'].Value = 'time' then FType := ksTimeSelector;
+
+  end;  }
   FItems.CommaText := AJson.Values['items'].Value;
 end;
 
@@ -2153,7 +2427,7 @@ begin
   inherited;
   FHeight := C_DEFAULT_SEPERATOR_HEIGHT;
   FFont.Size := 11;
-
+  FHorzAlign := TTextAlign.Leading;
 end;
 
 procedure TksInputListSeperator.DrawToCanvas(ACanvas: TCanvas);
@@ -2167,9 +2441,9 @@ begin
   FTitle := AText;
   FBackground := claNull;
   ACanvas.Fill.Color := claDimgray;
-  ACanvas.Font.Size := 11;
+  ACanvas.Font.Size := 12;
   FContentRect.Inflate(0, -4);
-  ACanvas.FillText(FContentRect, FTitle, False, 1, [], TTextAlign.Leading, TTextAlign.Trailing);
+  ACanvas.FillText(FContentRect, FTitle, False, 1, [], FHorzAlign, TTextAlign.Trailing);
   FContentRect.Inflate(0, 4);
 end;
 
@@ -2181,6 +2455,15 @@ end;
 function TksInputListSeperator.GetValue: string;
 begin
   Result := '';
+end;
+
+procedure TksInputListSeperator.SetHorzAlign(const Value: TTextAlign);
+begin
+  if FHorzAlign <> Value then
+  begin
+    FHorzAlign := Value;
+    Changed;
+  end;
 end;
 
 { TksInputListItem }
@@ -2240,15 +2523,372 @@ begin
   FImageRect.Width := FksInputList.Width;
 end;
 
+{ TksInputListDateTimeSelectorItem }
+
+constructor TksInputListDateTimeSelectorItem.Create(AInputList: TksInputList);
+begin
+  inherited;
+  if TPlatformServices.Current.SupportsPlatformService(IFMXPickerService, FPickerService) then
+  begin
+    FDateTimePicker := FPickerService.CreateDateTimePicker;
+    //FDatePicker.ShowMode := TDatePickerShowMode.Date;
+    //FTimePicker := FPickerService.CreateDateTimePicker;
+    //FTimePicker.ShowMode := TDatePickerShowMode.Time;
+  end;
+end;
+
+destructor TksInputListDateTimeSelectorItem.Destroy;
+begin
+
+  inherited;
+end;
+
+procedure TksInputListDateTimeSelectorItem.DoSelectDateTime(Sender: TObject; const ADateTime: TDateTime);
+begin
+  DateTime := ADateTime;
+end;
+
+class function TksInputListDateTimeSelectorItem.GetClassID: string;
+begin
+  Result := '{E4F2A9C8-FDBC-4E99-B434-66B444F5A3B3}';
+end;
+
+function TksInputListDateTimeSelectorItem.GetDateTime: TDateTime;
+begin
+  Result := FDateTime;
+end;
+
+
+function TksInputListDateTimeSelectorItem.GetValue: string;
+begin
+  Result := DateToISO8601(FDateTime);
+end;
+
+procedure TksInputListDateTimeSelectorItem.LoadStructure(AJson: TJSONObject);
+begin
+  inherited;
+
+end;
+
+procedure TksInputListDateTimeSelectorItem.MouseUp(ATapEvent: Boolean);
+begin
+  if ((FMouseDown) and (ATapEvent)) and (not ReadOnly) then
+  begin
+    case FKind of
+      ksDateSelector: FDateTimePicker.ShowMode := TDatePickerShowMode.Date;
+      ksTimeSelector: FDateTimePicker.ShowMode := TDatePickerShowMode.Time;
+    end;
+    FDateTimePicker.Date := FDateTime;
+    FDateTimePicker.OnDateChanged := DoSelectDateTime;
+    FDateTimePicker.Show;
+  end;
+  inherited;
+end;
+
+procedure TksInputListDateTimeSelectorItem.Reset;
+begin
+  inherited;
+  DateTime := 0;
+end;
+
+procedure TksInputListDateTimeSelectorItem.SaveStructure(AJson: TJsonObject);
+begin
+  inherited;
+
+end;
+
+procedure TksInputListDateTimeSelectorItem.SetDateTime(const AValue: TDateTime);
+begin
+  FDateTime := AValue;
+  case FKind of
+    ksDateSelector: Detail := FormatDateTime('ddd, d mmmm, yyyy', FDateTime);
+    ksTimeSelector: Detail := FormatDateTime('h:nn', FDateTime);
+  end;
+end;
+
+
+procedure TksInputListDateTimeSelectorItem.SetKind(const Value: TksDateTimeSelectorKind);
+begin
+  FKind := Value;
+  SetDateTime(FDateTime);
+end;
+
+procedure TksInputListDateTimeSelectorItem.SetValue(const Value: string);
+begin
+  try
+    FDateTime :=  ISO8601ToDate(Value)
+  except
+    // invalid date/time?
+  end;
+end;
+
+{ TksInputListBadgeItem }
+
+constructor TksInputListBadgeItem.Create(AInputList: TksInputList);
+begin
+  inherited;
+  FBadgeColor := claDodgerblue;
+  FBadgeTextColor := claWhite;
+end;
+
+procedure TksInputListBadgeItem.DrawToCanvas(ACanvas: TCanvas);
+var
+  r: TRectF;
+  ADetail: string;
+  ACenter: TPointF;
+begin
+  ADetail := FDetail;
+  FDetail := '';
+  inherited DrawToCanvas(ACanvas);
+  FDetail := ADetail;
+
+  ACanvas.Fill.Color := FBadgeColor;
+  ACanvas.Fill.Kind := TBrushKind.Solid;
+  ACanvas.Font.Size := 13;
+  r := FContentRect;
+  r.Left := r.Right - (ACanvas.TextWidth(FDetail)+14);
+  ACenter := r.CenterPoint;
+  r.Top := ACenter.Y-13;
+  r.Bottom := ACenter.Y+13;
+  ACanvas.FillRect(r, 6, 6, AllCorners, 1);
+
+  ACanvas.Fill.Color := FBadgeTextColor;
+  ACanvas.FillText(r, FDetail, False, 1, [], TTextAlign.Center, TTextAlign.Center);
+end;
+
+class function TksInputListBadgeItem.GetClassID: string;
+begin
+  Result := '{5CE55631-0B72-4BDA-8805-D2EDF5E639FF}';
+end;
+
+function TksInputListBadgeItem.GetDetailTextColor: TAlphaColor;
+begin
+  Result := FBadgeTextColor;
+end;
+
+{ TksInputListChatItem }
+
+constructor TksInputListChatItem.Create(AInputList: TksInputList);
+begin
+  inherited;
+  FColor := claDodgerblue;
+  FTextColor := claWhite;
+  FCached := TBitmap.Create;
+  FCached.BitmapScale := 2;
+end;
+
+function TksInputListChatItem.CalculateHeight: single;
+var
+  AEmojiOnly: Boolean;
+begin
+  AEmojiOnly := IsEmojiOnly;
+
+  ATextLayout.Font.Size := 16;
+  if AEmojiOnly then
+    ATextLayout.Font.Size := 36;
+  ATextLayout.BeginUpdate;
+  ATextLayout.Text := FBody;
+  ATextLayout.WordWrap := True;
+
+  ATextLayout.Color := FTextColor;
+  ATextLayout.HorizontalAlign := TTextAlign.Leading;
+
+  ATextLayout.Padding.Rect := RectF(0, 0, 0, 0);
+  ATextLayout.Trimming := TTextTrimming.None;
+  ATextLayout.TopLeft := PointF(0,0);
+  ATextLayout.MaxSize := PointF(FksInputList.Width * 0.7, MaxSingle);
+  ATextLayout.EndUpdate;
+
+  //Result := ATextLayout.TextRect.Height+20;
+  //if FSender <> '' then
+  if AEmojiOnly then
+    Result := ATextLayout.TextRect.Height+40
+  else
+
+  Result := ATextLayout.TextRect.Height+48;
+
+end;
+
+destructor TksInputListChatItem.Destroy;
+begin
+  FCached.Free;
+  inherited;
+end;
+
+procedure TksInputListChatItem.DrawToCanvas(ACanvas: TCanvas);
+var
+  r: TRectF;
+  AEmojiOnly: Boolean;
+  AStr: string;
+begin
+  inherited;
+
+  if FCached.IsEmpty then
+  begin
+    AEmojiOnly := IsEmojiOnly;
+    ATextLayout.Font.Size := 16;
+    if AEmojiOnly then
+      ATextLayout.Font.Size := 36;
+    ATextLayout.BeginUpdate;
+
+    AStr := FBody;
+
+
+
+
+    ATextLayout.Text := Trim(AStr);
+    ATextLayout.WordWrap := True;
+
+    ATextLayout.Color := FTextColor;
+    ATextLayout.HorizontalAlign := TTextAlign.Leading;
+    ATextLayout.Padding.Rect := RectF(0, 0, 0, 0);
+    ATextLayout.Trimming := TTextTrimming.None;
+    ATextLayout.TopLeft := PointF(8, 8);
+    if AEmojiOnly then
+      ATextLayout.TopLeft := PointF(8, -4);
+
+    ATextLayout.MaxSize := PointF(FksInputList.Width * 0.7, MaxSingle);
+    ATextLayout.EndUpdate;
+
+    case AEmojiOnly of
+      True:  FCached.SetSize(2*(Round(ATextLayout.Width+16)), (2*(Round(ATextLayout.Height))));
+      False: FCached.SetSize(2*(Round(ATextLayout.Width+16)), (2*(Round(ATextLayout.Height+16))));
+    end;
+
+    FCached.Canvas.BeginScene(nil);
+    try
+      if AEmojiOnly = False then
+      begin
+        FCached.Canvas.Fill.Kind := TBrushKind.Solid;
+        FCached.Canvas.Fill.Color := FColor;
+        FCached.Canvas.FillRect(RectF(0, 0, Round(FCached.Width/2), Round(FCached.Height/2)), 12, 12, AllCorners, 1);
+      end;
+      FCached.Canvas.Fill.Color := FColor;
+      ATextLayout.RenderLayout(FCached.Canvas);
+
+    finally
+      FCached.Canvas.EndScene;
+    end;
+  end;
+
+  AStr := Trim(FSender);
+  if AStr <> '' then
+    AStr := AStr + ' - ';
+  AStr := AStr + FormatDateTime('hh:nn', FDateTime);
+  ACanvas.Fill.Color := claSilver;
+  ACanvas.Font.Size := 12;
+  r := FContentRect;
+  r.Inflate(-4, -6);
+  ACanvas.FillText(r, AStr, False, 1, [], FAlignment, TTextAlign.Leading);
+
+
+  r := FCached.BoundsF;
+  r.Width := r.Width/2;
+  r.Height := r.Height/2;
+  case FAlignment of
+    TTextAlign.Leading: OffsetRect(r, 8, FContentRect.Top+22);
+    TTextAlign.Center: OffsetRect(r, 8, FContentRect.Top+22);
+    TTextAlign.Trailing: OffsetRect(r, FContentRect.Right-r.Width, FContentRect.Top+22);
+  end;
+  //if FSender <> '' then
+  //  OffsetRect(r, 0, 20);
+
+  ACanvas.DrawBitmap(FCached, FCached.BoundsF, r, 1, True);
+end;
+
+class function TksInputListChatItem.GetClassID: string;
+begin
+  Result := '{FD931C67-7C01-4C78-B3D4-EF66A94C2593}';
+end;
+
+function TksInputListChatItem.GetHeight: Single;
+begin
+  Result := CalculateHeight;
+end;
+
+function TksInputListChatItem.IsEmojiOnly: Boolean;
+var
+  c: Char;
+begin
+  Result := True;
+  for c in FBody do
+  begin
+    if Ord(c) < 5000 then
+    begin
+      Result := False;
+      Exit;
+    end;
+    {if (c.IsLetterOrDigit = True) or
+       (c.IsPunctuation = True) or
+       (c.IsSeparator = True) or
+       (c.IsSymbol = True) or
+       (c.IsWhiteSpace = True) or
+       (c.IsControl) then
+    begin
+      Result := False;
+      Exit;
+    end;}
+  end;
+end;
+
+procedure TksInputListChatItem.MouseDown;
+begin
+  inherited;
+end;
+
+procedure TksInputListChatItem.SetAlignment(const Value: TTextAlign);
+begin
+  if FAlignment <> Value then
+  begin
+    FAlignment := Value;
+    Changed;
+  end;
+end;
+
+procedure TksInputListChatItem.SetBody(const Value: string);
+begin
+  if FBody <> Value then
+  begin
+    FBody := Value;
+    Changed;
+  end;
+end;
+
+procedure TksInputListChatItem.SetDateTime(const Value: TDateTime);
+begin
+  if CompareDateTime(FDateTime, Value) <> 0 then
+  begin
+    FDateTime := Value;
+    Changed;
+  end;
+end;
+
+procedure TksInputListChatItem.SetSender(const Value: string);
+begin
+  IF FSender <> Value then
+  begin
+    FSender := Value;
+    Changed;
+  end;
+end;
+
+procedure TksInputListChatItem.UpdateRects;
+begin
+  //Height := CalculateHeight;
+  inherited UpdateRects;
+end;
+
 initialization
 
   TempForm := nil;
   AAccessoriesList := TInputListAccessoryImages.Create;
+  ATextLayout :=  TTextLayoutManager.DefaultTextLayout.Create;
 
 finalization
 
   TempForm.Free;
   AAccessoriesList.Free;
+  ATextLayout.Free;
 
 end.
 
