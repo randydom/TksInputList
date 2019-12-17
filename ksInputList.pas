@@ -45,12 +45,14 @@ type
   TksInputListCheckBoxItem = class;
   TksInputListButtonItem = class;
   TksInputListTrackBarItem = class;
+  TksInputListDateTimeSelectorItem = class;
 
   TksInputAccessoryType = (atNone, atMore, atCheckmark, atDetail);
 
   TksInputListItemClickEvent = procedure(Sender: TObject; AItem: TksBaseInputListItem; AID: string) of object;
   TksInputListItemLongTapEvent = procedure(Sender: TObject; AItem: TksBaseInputListItem; AID: string) of object;
   TksInputListSelectorItemChangeEvent = procedure(Sender: TObject; AItem: TksInputListSelectorItem; AID, AValue: string) of object;
+  TksInputListDateTimeSelectedEvent = procedure(Sender: TObject; AItem: TksInputListDateTimeSelectorItem; AID: string; ADateTime: TDateTime) of object;
   TksInputListEditTextChangeEvent = procedure(Sender: TObject; AItem: TksInputListEditItem; AID, AText: string) of object;
   TksInputListSwitchChangeEvent = procedure(Sender: TObject; AItem: TksInputListSwitchItem; AID: string; AIsChecked: Boolean) of object;
   TksInputListCheckBoxChangeEvent = procedure(Sender: TObject; AItem: TksInputListCheckBoxItem; AID: string; AIsChecked: Boolean) of object;
@@ -60,6 +62,7 @@ type
   TksBaseInputListItem = class
   private
     FksInputList: TksInputList;
+    FEnabled: Boolean;
     FItemID: string;
     FFont: TFont;
     FItemRect: TRectF;
@@ -90,7 +93,8 @@ type
     procedure SetShowSelection(const Value: Boolean);
     procedure SetAccessory(const Value: TksInputAccessoryType);
     procedure SetDetail(const Value: string);
-
+    procedure SetEnabled(const Value: Boolean);
+    procedure DrawDisabledRect(ACanvas: TCanvas);
   protected
     class function GetClassID: string; virtual; abstract;
     function GetHeight: Single; virtual;
@@ -130,6 +134,7 @@ type
     property TagStr: string read FTagStr write FTagStr;
     property TagInt: integer read FTagInt write FTagInt;
     property ShowSelection: Boolean read FShowSelection write SetShowSelection default False;
+    property Enabled: Boolean read FEnabled write SetEnabled default True;
     property ReadOnly: Boolean read FReadOnly write SetReadOnly default False;
   end;
 
@@ -164,15 +169,17 @@ type
   private
     FBadgeColor: TAlphaColor;
     FBadgeTextColor: TAlphaColor;
+    procedure SetBadgeColor(const Value: TAlphaColor);
   protected
     class function GetClassID: string; override;
     function GetDetailTextColor: TAlphaColor; override;
   public
     constructor Create(AInputList: TksInputList); override;
     procedure DrawToCanvas(ACanvas: TCanvas); override;
-    property BadgeColor: TAlphaColor read FBadgeColor write FBadgeColor default claDodgerBlue;
+    property BadgeColor: TAlphaColor read FBadgeColor write SetBadgeColor default claDodgerBlue;
     property BadgeTextColor: TAlphaColor read FBadgeTextColor write FBadgeTextColor default claWhite;
   end;
+
 
   TksInputListChatItem = class(TksInputListItem)
   private
@@ -183,12 +190,14 @@ type
     FDateTime: TDateTime;
     FCached: TBitmap;
     FAlignment: TTextAlign;
+    FUse24HourTime: Boolean;
     function IsEmojiOnly: Boolean;
     procedure SetSender(const Value: string);
     procedure SetDateTime(const Value: TDateTime);
     procedure SetBody(const Value: string);
     function CalculateHeight: single;
     procedure SetAlignment(const Value: TTextAlign);
+    procedure SetUse24HourTime(const Value: Boolean);
   protected
     class function GetClassID: string; override;
     procedure UpdateRects; override;
@@ -205,6 +214,7 @@ type
     property Sender: string read FSender write SetSender;
     property Body: string read FBody write SetBody;
     property Alignment: TTextAlign read FAlignment write SetAlignment default TTextAlign.Leading;
+    property Use24HourTime: Boolean read FUse24HourTime write SetUse24HourTime default True;
   end;
 
 
@@ -337,12 +347,8 @@ type
 
   TksInputListSelectorItem = class(TksBaseInputListItem)
   private
-
-    //FPickerService: IFMXPickerService;
     FItems: TStrings;
     FCombo: TComboBox;
-    ////FDatePicker: TCustomDateTimePicker;
-    //FTimePicker: TCustomDateTimePicker;
     FValue: string;
     procedure DoSelectorChanged(Sender: TObject);
     procedure SetItems(const Value: TStrings);
@@ -415,8 +421,8 @@ type
     function AddDateSelector(AID: string; AImg: TBitmap; ATitle: string; ASelected: TDateTime): TksInputListDateTimeSelectorItem overload;
     function AddTimeSelector(AID: string; AImg: TBitmap; ATitle: string; ASelected: TDateTime): TksInputListDateTimeSelectorItem overload;
     function AddRadioItem(AID: string; AImage: TBitmap; AGroupID, ATitle: string; AChecked: Boolean): TksInputListCheckBoxItem;
-    function AddBadgeItem(AID: string; AImage: TBitmap; ATitle, AValue: string; ABadgeColor, ABadgeTextColor: TAlphaColor): TksInputListBadgeItem;
-    function AddChatItem(AID, ASender, AText: string; ADateTime: TDateTime; AAlign: TTextAlign; AColor, ATextColor: TAlphaColor): TksInputListChatItem;
+    function AddBadgeItem(AID: string; AImage: TBitmap; ATitle, AValue: string; ABadgeColor, ABadgeTextColor: TAlphaColor; const AAccessory: TksInputAccessoryType = atNone): TksInputListBadgeItem;
+    function AddChatItem(AID, ASender, AText: string; ADateTime: TDateTime; AAlign: TTextAlign; AColor, ATextColor: TAlphaColor; const AUse24HourTime: Boolean = True): TksInputListChatItem;
     function ItemExists(AID: string): Boolean;
 
     property ItemByID[AID: string]: TksBaseInputListItem read GetItemByID;
@@ -447,6 +453,7 @@ type
     FMousePos: TPointF;
     FMouseDownItem: TksBaseInputListItem;
     FOnSelectorItemSelected: TksInputListSelectorItemChangeEvent;
+    FOnDateTimeSelected: TksInputListDateTimeSelectedEvent;
     FOnEditItemTextChange: TksInputListEditTextChangeEvent;
     FOnItemClick: TksInputListItemClickEvent;
     FOnItemLongTap: TksInputListItemLongTapEvent;
@@ -500,6 +507,7 @@ type
     property OnItemClick: TksInputListItemClickEvent read FOnItemClick write FOnItemClick;
     property OnItemLongTapClick: TksInputListItemLongTapEvent read FOnItemLongTap write FOnItemLongTap;
     property OnSelectorItemSelected: TksInputListSelectorItemChangeEvent read FOnSelectorItemSelected write FOnSelectorItemSelected;
+    property OnDateTimeSelected: TksInputListDateTimeSelectedEvent read FOnDateTimeSelected write FOnDateTimeSelected;
     property OnEditItemTextChange: TksInputListEditTextChangeEvent read FOnEditItemTextChange write FOnEditItemTextChange;
     property OnItemSwitchChanged: TksInputListSwitchChangeEvent read FOnSwitchChange write FOnSwitchChange;
     property OnItemCheckBoxChanged: TksInputListCheckBoxChangeEvent read FOnCheckBoxChange write FOnCheckBoxChange;
@@ -974,9 +982,15 @@ begin
       end
       else
       begin
+
+
         if Assigned(OnItemClick) then
           OnItemClick(Self, FMouseDownItem, FMouseDownItem.ID);
-        end;
+      end;
+
+
+
+
     end;
 
     FMouseDownItem := nil;
@@ -1150,16 +1164,18 @@ begin
     if (AItem is TksInputListItemWithControl) then
     begin
       ACtrlItem := (AItem as TksInputListItemWithControl);
-      if IntersectRect(r, ACtrlItem.FItemRect) then
+      if ACtrlItem.Enabled then
       begin
-        if ACtrlItem.FControl.Parent = TempForm then
+        if IntersectRect(r, ACtrlItem.FItemRect) then
         begin
-          ACtrlItem.UpdateControlPosition;
-          ACtrlItem.FControl.Visible := True;
-          ACtrlItem.ClearCache;
-          Self.AddObject(ACtrlItem.FControl);
+          if ACtrlItem.FControl.Parent = TempForm then
+          begin
+            ACtrlItem.UpdateControlPosition;
+            ACtrlItem.FControl.Visible := True;
+            ACtrlItem.ClearCache;
+            Self.AddObject(ACtrlItem.FControl);
+          end;
         end;
-
       end;
     end;
   end;
@@ -1188,6 +1204,7 @@ begin
   FSelected := False;
   FShowSelection := False;
   FReadOnly := False;
+  FEnabled := True;
 end;
 
 destructor TksBaseInputListItem.Destroy;
@@ -1202,6 +1219,13 @@ begin
   //
 end;
 
+
+procedure TksBaseInputListItem.DrawDisabledRect(ACanvas: TCanvas);
+begin
+  ACanvas.Fill.Color := claWhite;
+  ACanvas.Fill.Kind := TBrushKind.Solid;
+  ACanvas.FillRect(FItemRect, 0, 0, AllCorners, 0.75);
+end;
 
 procedure TksBaseInputListItem.DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
 var
@@ -1231,7 +1255,7 @@ begin
     ACanvas.IntersectClipRect(FItemRect);
     ACanvas.Fill.Color := FBackground;
     ACanvas.Font.Assign(FFont);
-    if ((FSelected) and (FShowSelection)) and (not FReadOnly) then
+    if ((FSelected) and (FShowSelection)) and (not FReadOnly) and (FEnabled) then
       ACanvas.Fill.Color := $FFEAEAEA;
 
     r := FItemRect;
@@ -1467,6 +1491,15 @@ begin
   end;
 end;
 
+procedure TksBaseInputListItem.SetEnabled(const Value: Boolean);
+begin
+  if FEnabled <> Value then
+  begin
+    FEnabled := Value;
+    Changed;
+  end;
+end;
+
 procedure TksBaseInputListItem.SetHeight(const Value: Single);
 begin
   FHeight := Value;
@@ -1542,7 +1575,7 @@ end;
 { TksInputListItems }
 
 function TksInputListItems.AddBadgeItem(AID: string; AImage: TBitmap; ATitle, AValue: string;
-  ABadgeColor, ABadgeTextColor: TAlphaColor): TksInputListBadgeItem;
+  ABadgeColor, ABadgeTextColor: TAlphaColor; const AAccessory: TksInputAccessoryType = atNone): TksInputListBadgeItem;
 begin
   Result := TksInputListBadgeItem.Create(FksInputList);
   Result.FItemID := AID;
@@ -1551,6 +1584,7 @@ begin
   Result.Detail := AValue;
   Result.BadgeColor := ABadgeColor;
   Result.BadgeTextColor := ABadgeTextColor;
+  Result.Accessory := AAccessory;
   Result.OnChange := ItemChange;
   Add(Result);
   ItemChange(Self);
@@ -1573,7 +1607,8 @@ begin
   ItemChange(Self);
 end;
 
-function TksInputListItems.AddChatItem(AID, ASender, AText: string; ADateTime: TDateTime; AAlign: TTextAlign; AColor, ATextColor: TAlphaColor): TksInputListChatItem;
+function TksInputListItems.AddChatItem(AID, ASender, AText: string; ADateTime: TDateTime; AAlign: TTextAlign;
+  AColor, ATextColor: TAlphaColor; const AUse24HourTime: Boolean = True): TksInputListChatItem;
 var
   AStr: string;
   ATone: integer;
@@ -1601,6 +1636,7 @@ begin
   Result.DateTime := ADateTime;
   Result.Sender := ASender;
   Result.Alignment := AAlign;
+  Result.Use24HourTime := AUse24HourTime;
   Result.OnChange := ItemChange;
   Add(Result);
   ItemChange(Self);
@@ -1791,6 +1827,8 @@ begin
   begin
     if IntersectRect(AViewPort, AItem.FItemRect) then
       AItem.DrawToCanvas(ACanvas);
+    if AItem.Enabled = False then
+      AItem.DrawDisabledRect(ACanvas);
   end;
 
   if FksInputList.ShowDividers then
@@ -2005,7 +2043,7 @@ end;
 
 procedure TksInputListItemWithControl.ItemClick;
 begin
-  if (FFullWidthSelect) and (not ReadOnly) then
+  if (FFullWidthSelect) and (not ReadOnly) and (FEnabled) then
     ClickControl;
 end;
 
@@ -2546,6 +2584,8 @@ end;
 procedure TksInputListDateTimeSelectorItem.DoSelectDateTime(Sender: TObject; const ADateTime: TDateTime);
 begin
   DateTime := ADateTime;
+  if Assigned(FksInputList.OnDateTimeSelected) then
+    FksInputList.OnDateTimeSelected(FksInputList, Self, FItemID, ADateTime);
 end;
 
 class function TksInputListDateTimeSelectorItem.GetClassID: string;
@@ -2572,7 +2612,7 @@ end;
 
 procedure TksInputListDateTimeSelectorItem.MouseUp(ATapEvent: Boolean);
 begin
-  if ((FMouseDown) and (ATapEvent)) and (not ReadOnly) then
+  if ((FMouseDown) and (ATapEvent)) and (not ReadOnly) and (FEnabled) then
   begin
     case FKind of
       ksDateSelector: FDateTimePicker.ShowMode := TDatePickerShowMode.Date;
@@ -2600,10 +2640,12 @@ end;
 procedure TksInputListDateTimeSelectorItem.SetDateTime(const AValue: TDateTime);
 begin
   FDateTime := AValue;
+
   case FKind of
     ksDateSelector: Detail := FormatDateTime('ddd, d mmmm, yyyy', FDateTime);
-    ksTimeSelector: Detail := FormatDateTime('h:nn', FDateTime);
+    ksTimeSelector: Detail := FormatDateTime('hh:nn', FDateTime);
   end;
+
 end;
 
 
@@ -2641,7 +2683,8 @@ begin
   FDetail := '';
   inherited DrawToCanvas(ACanvas);
   FDetail := ADetail;
-
+  if Trim(FDetail) = '' then
+    Exit;
   ACanvas.Fill.Color := FBadgeColor;
   ACanvas.Fill.Kind := TBrushKind.Solid;
   ACanvas.Font.Size := 13;
@@ -2666,6 +2709,15 @@ begin
   Result := FBadgeTextColor;
 end;
 
+procedure TksInputListBadgeItem.SetBadgeColor(const Value: TAlphaColor);
+begin
+  if FBadgeColor <> Value then
+  begin
+    FBadgeColor := Value;
+    Changed;
+  end;
+end;
+
 { TksInputListChatItem }
 
 constructor TksInputListChatItem.Create(AInputList: TksInputList);
@@ -2675,6 +2727,7 @@ begin
   FTextColor := claWhite;
   FCached := TBitmap.Create;
   FCached.BitmapScale := 2;
+  FUse24HourTime := True;
 end;
 
 function TksInputListChatItem.CalculateHeight: single;
@@ -2774,7 +2827,11 @@ begin
   AStr := Trim(FSender);
   if AStr <> '' then
     AStr := AStr + ' - ';
-  AStr := AStr + FormatDateTime('hh:nn', FDateTime);
+
+  if FUse24HourTime then
+    AStr := AStr + FormatDateTime('hh:nn', FDateTime)
+  else
+    AStr := AStr + FormatDateTime('h:nn am/pm', FDateTime);
   ACanvas.Fill.Color := claSilver;
   ACanvas.Font.Size := 12;
   r := FContentRect;
@@ -2868,6 +2925,15 @@ begin
   IF FSender <> Value then
   begin
     FSender := Value;
+    Changed;
+  end;
+end;
+
+procedure TksInputListChatItem.SetUse24HourTime(const Value: Boolean);
+begin
+  if FUse24HourTime <> Value then
+  begin
+    FUse24HourTime := Value;
     Changed;
   end;
 end;
