@@ -548,10 +548,8 @@ const
   C_DEFAULT_ITEM_HEIGHT = 44;
 
   {$IFDEF MSWINDOWS}
-  C_SCREEN_SCALE = 1;
   C_RIGHT_MARGIN = 20;
   {$ELSE}
-  //C_SCREEN_SCALE = 2;
   C_RIGHT_MARGIN = 8;
   {$ENDIF}
 
@@ -607,11 +605,7 @@ begin
   end;
   {$IFDEF ANDROID}
   AScreenScale := Result;
-
-  //if ARound then
-  //  Result := Round(Result);
   {$ENDIF}
-
 end;
 
 function AccessoryToStr(AAcc: TksInputAccessoryType): string;
@@ -2955,7 +2949,7 @@ begin
     Result := ATextLayout.TextRect.Height+40
   else
 
-  Result := ATextLayout.TextRect.Height+48;
+  Result := ATextLayout.TextRect.Height+40;
 
 end;
 
@@ -2994,20 +2988,23 @@ begin
     ATextLayout.HorizontalAlign := TTextAlign.Leading;
     ATextLayout.Padding.Rect := RectF(0, 0, 0, 0);
     ATextLayout.Trimming := TTextTrimming.None;
-    ATextLayout.TopLeft := PointF((GetScreenScale * 4), (GetScreenScale * 4));
-    if AEmojiOnly then
-      //ATextLayout.TopLeft := PointF((GetScreenScale * 4), (GetScreenScale * -2));
-      ATextLayout.TopLeft := PointF(8, -4);
+
+    //ATextLayout.TopLeft := PointF((GetScreenScale * 4), (GetScreenScale * 4));
+    ATextLayout.TopLeft := PointF(4,4);
+
+    //if AEmojiOnly then
+    //  ATextLayout.TopLeft := PointF(8, -4);
 
     ATextLayout.MaxSize := PointF(FksInputList.Width * 0.7, MaxSingle);
     ATextLayout.EndUpdate;
 
 
-    APadding := (GetScreenScale * 8);
-    case AEmojiOnly of
-      True:  FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height))));
-      False: FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height+APadding))));
-    end;
+    APadding := (8);
+    FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height+APadding))));
+    //case AEmojiOnly of
+    //  True:  FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height))));
+    //  False: FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height+APadding))));
+    //end;
 
     FCached.Canvas.BeginScene(nil);
     try
@@ -3016,7 +3013,7 @@ begin
       begin
         FCached.Canvas.Fill.Kind := TBrushKind.Solid;
         FCached.Canvas.Fill.Color := FColor;
-        FCached.Canvas.FillRect(RectF(0, 0, Round(FCached.Width/GetScreenScale), Round(FCached.Height/GetScreenScale)), 12, 12, AllCorners, 1);
+        FCached.Canvas.FillRect(RectF(0, 0, Round(FCached.Width/GetScreenScale), Round(FCached.Height/GetScreenScale)), 8, 8, AllCorners, 1);
       end;
       FCached.Canvas.Fill.Color := FColor;
       ATextLayout.RenderLayout(FCached.Canvas);
@@ -3047,9 +3044,9 @@ begin
   r.Height := r.Height/GetScreenScale;
 
   case FAlignment of
-    TTextAlign.Leading: OffsetRect(r, (GetScreenScale * 4), FContentRect.Top+(GetScreenScale * 11));
-    TTextAlign.Center: OffsetRect(r, (GetScreenScale * 4), FContentRect.Top+(GetScreenScale * 11));
-    TTextAlign.Trailing: OffsetRect(r, FContentRect.Right-r.Width, FContentRect.Top+(GetScreenScale * 11));
+    TTextAlign.Leading: OffsetRect(r, (4), FContentRect.Top+(24));
+    TTextAlign.Center: OffsetRect(r, (4), FContentRect.Top+(24));
+    TTextAlign.Trailing: OffsetRect(r, FContentRect.Right-r.Width, FContentRect.Top+(24));
   end;
  
 
