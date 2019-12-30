@@ -5,15 +5,7 @@ interface
 uses Classes, FMX.Controls, FMX.Objects, FMX.StdCtrls, FMX.Types, System.UITypes;
 
 type
-  [ComponentPlatformsAttribute(
-    pidWin32 or
-    pidWin64 or
-    pidiOSSimulator32 or pidiOSSimulator64 or
-    pidiOSDevice32 or pidiOSDevice64 or
-    pidAndroid32Arm or pidAndroid64Arm
-    )]
-
-  TksColorButtonStyle = (ksbsGray, ksbsGreen, ksbsRed, ksbsBlue);
+  TksColorButtonStyle = (ksbsGray, ksbsGreen, ksbsRed, ksbsBlue, ksbsWhite);
 
   [ComponentPlatformsAttribute(
     pidAllPlatforms
@@ -150,6 +142,7 @@ begin
     ksbsGray: SetColours(claGainsboro, claSilver, claGray, claBlack);
     ksbsGreen: SetColours($FF4BD44B, $FF2FB92F, claForestgreen, clawhite);
     ksbsRed: SetColours(claRed, $FFC90101, $FFC90101, clawhite);
+    ksbsWhite: SetColours(claWhite, claGainsboro, claSilver, claDimgray);
   end;
 
 

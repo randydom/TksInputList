@@ -71,6 +71,7 @@ type
     FAccessoryRect: TRectF;
     FAccessory: TksInputAccessoryType;
     FBackground: TAlphaColor;
+
     FHeight: single;
     FIndex: integer;
     FTitle: string;
@@ -81,9 +82,12 @@ type
     FOnChange: TNotifyEvent;
     FSelected: Boolean;
     FShowSelection: Boolean;
+    FSelectedColor: TAlphaColor;
     FTagStr: string;
     FTagInt: integer;
     FReadOnly: Boolean;
+    FTextColor: TAlphaColor;
+    FDetailTextColor: TAlphaColor;
     function GetItemRect: TRectF;
     function GetAccessoryWidth(const AAddPadding: Boolean = False): single;
     procedure SetTitle(const Value: string);
@@ -95,6 +99,9 @@ type
     procedure SetDetail(const Value: string);
     procedure SetEnabled(const Value: Boolean);
     procedure DrawDisabledRect(ACanvas: TCanvas);
+    procedure SetTextColor(const Value: TAlphaColor);
+    procedure SetSelectedColor(const Value: TAlphaColor);
+    procedure SetDetailTextColor(const Value: TAlphaColor);
   protected
     class function GetClassID: string; virtual; abstract;
     function GetHeight: Single; virtual;
@@ -111,7 +118,6 @@ type
     procedure Reset; virtual;
     procedure DoCustomDraw(ACanvas: TCanvas); virtual;
     property ItemRect: TRectF read GetItemRect;
-    property Selected: Boolean read FSelected write SetSelected default False;
     procedure SetReadOnly(const Value: Boolean); virtual;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   public
@@ -124,6 +130,8 @@ type
     procedure LoadFromJson(AJson: TJsonObject; AStructure, AData: Boolean);
     property Accessory: TksInputAccessoryType read FAccessory write SetAccessory;
     property BackgroundColor: TAlphaColor read FBackground write SetBackgroundColor;
+    property TextColor: TAlphaColor read FTextColor write SetTextColor;
+    property DetailTextColor: TAlphaColor read FDetailTextColor write SetDetailTextColor;
     property Image: TBitmap read FImage;
     property Height: Single read GetHeight write SetHeight;
     property Title: string read FTitle write SetTitle;
@@ -133,7 +141,9 @@ type
     property Value: string read GetValue write SetValue;
     property TagStr: string read FTagStr write FTagStr;
     property TagInt: integer read FTagInt write FTagInt;
+    property Selected: Boolean read FSelected write SetSelected default False;
     property ShowSelection: Boolean read FShowSelection write SetShowSelection default False;
+    property SelectedColor: TAlphaColor read FSelectedColor write SetSelectedColor;
     property Enabled: Boolean read FEnabled write SetEnabled default True;
     property ReadOnly: Boolean read FReadOnly write SetReadOnly default False;
   end;
@@ -399,10 +409,12 @@ type
   private
     FksInputList: TksInputList;
     function GetItemByID(AID: string): TksBaseInputListItem;
+    function GetCheckedCount: integer;
   public
     constructor Create(AForm: TksInputList); virtual;
     procedure ItemChange(Sender: TObject);
     procedure DrawToCanvas(ACanvas: TCanvas; AViewPort: TRectF);
+    procedure DeselectAll;
     function AddSeperator(ATitle: string; const AHeight: integer = C_DEFAULT_SEPERATOR_HEIGHT): TksInputListSeperator;
     function AddItem(AID: string; AImg: TBitmap; ATitle: string;
                      const AAccessory: TksInputAccessoryType = atNone): TksInputListItem;
@@ -415,6 +427,7 @@ type
     function AddCheckBoxItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean): TksInputListCheckBoxItem;
     procedure AddButtonItem(AID: string; AImg: TBitmap; ATitle, AButtonTitle: string);
     procedure AddTrackBar(AID: string; AImg: TBitmap; ATitle: string; APos, AMax: integer);
+
     function AddImageItem(AID: string; AImg: TBitmap): TksInputListImageItem;
     function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: array of string): TksInputListSelectorItem overload;
     function AddItemSelector(AID: string; AImg: TBitmap; ATitle, ASelected: string; AItems: TStrings): TksInputListSelectorItem overload;
@@ -425,6 +438,7 @@ type
     function AddChatItem(AID, ASender, AText: string; ADateTime: TDateTime; AAlign: TTextAlign; AColor, ATextColor: TAlphaColor; const AUse24HourTime: Boolean = True): TksInputListChatItem;
     function ItemExists(AID: string): Boolean;
 
+    property CheckedCount: integer read GetCheckedCount;
     property ItemByID[AID: string]: TksBaseInputListItem read GetItemByID;
 
   end;
@@ -432,6 +446,7 @@ type
   TksInputListCanvas = class(TPaintBox)
   protected
     procedure Paint; override;
+
   end;
 
   [ComponentPlatformsAttribute(
@@ -463,6 +478,8 @@ type
     FOnItemTrackBarChange: TksInputListTrackBarItemEvent;
     FItemHeight: single;
     FShowDividers: Boolean;
+    FBackgroundColor: TAlphaColor;
+    FMouseDown: Boolean;
     procedure UpdateItemRects;
     procedure RedrawItems;
     procedure CreateScrollMonitor;
@@ -474,7 +491,9 @@ type
     function GetAsJson(AStructure, AData: Boolean): string;
     procedure SetValue(AName: string; const Value: string);
     procedure SetShowDividers(const Value: Boolean);
+    procedure SetBackgroundColor(const Value: TAlphaColor);
   protected
+    procedure Paint; override;
     procedure Resize; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
     procedure MouseMove(Shift: TShiftState; X, Y: Single); override;
@@ -502,6 +521,7 @@ type
     property AsJson[AStructure, AData: Boolean]: string read GetAsJson;
   published
     property VScrollBar;
+    property BackgroundColor: TAlphaColor read FBackgroundColor write SetBackgroundColor default claNull;
     property ShowDividers: Boolean read FShowDividers write SetShowDividers default True;
     property ItemHeight: single read FItemHeight write SetItemHeight;
     property OnItemClick: TksInputListItemClickEvent read FOnItemClick write FOnItemClick;
@@ -531,7 +551,7 @@ const
   C_SCREEN_SCALE = 1;
   C_RIGHT_MARGIN = 20;
   {$ELSE}
-  C_SCREEN_SCALE = 2;
+  //C_SCREEN_SCALE = 2;
   C_RIGHT_MARGIN = 8;
   {$ENDIF}
 
@@ -559,10 +579,39 @@ var
   TempForm: TForm;
   AAccessoriesList: TInputListAccessoryImages;
   ATextLayout: TTextLayout;
+  AScreenScale: single;
 
 procedure Register;
 begin
 	RegisterComponents('Graham Murt', [TksInputList]);
+end;
+
+function GetScreenScale: single;
+var
+  Service: IFMXScreenService;
+begin
+  if AScreenScale > 0 then
+  begin
+    Result := AScreenScale;
+    Exit;
+  end
+  else
+  begin
+    Service := IFMXScreenService(TPlatformServices.Current.GetPlatformService(IFMXScreenService));
+    Result := Service.GetScreenScale;
+    {$IFDEF IOS}
+    if Result < 2 then
+     Result := 2;
+     AScreenScale := Result;
+    {$ENDIF}
+  end;
+  {$IFDEF ANDROID}
+  AScreenScale := Result;
+
+  //if ARound then
+  //  Result := Round(Result);
+  {$ENDIF}
+
 end;
 
 function AccessoryToStr(AAcc: TksInputAccessoryType): string;
@@ -662,7 +711,7 @@ var
 begin
   AMap := TBitmap.Create;
   Result := TBitmap.Create;
-  AScale := C_SCREEN_SCALE;
+  AScale := GetScreenScale;
   AStyleObj := TStyleObject(TStyleManager.ActiveStyle(nil));
 
   for ICount := Low(AStyleName) to High(AStyleName) do
@@ -771,9 +820,9 @@ begin
   FCanvas.Stored := False;
   AddObject(FCanvas);
   UpdateItemRects;
-
+  FMouseDown := False;
   CreateScrollMonitor;
-
+  AniCalculations.BoundsAnimation := True;
 end;
 
 procedure TksInputList.CreateScrollMonitor;
@@ -859,6 +908,7 @@ end;
 procedure TksInputList.HideAllControls;
 var
   AItem: TksBaseInputListItem;
+  c: TFMXObject;
 begin
   inherited;
   if (FUpdateCount > 0) or (FControlsVisible = False) then
@@ -868,8 +918,14 @@ begin
   begin
     if AItem is TksInputListItemWithControl then
     begin
-      TempForm.AddObject((AItem as TksInputListItemWithControl).FControl);
-      (AItem as TksInputListItemWithControl).FControl.ApplyStyleLookup;
+      //(AItem as TksInputListItemWithControl).FControl.Visible := False;
+      //RemoveObject((AItem as TksInputListItemWithControl).FControl);
+      c := (AItem as TksInputListItemWithControl).FControl;
+      if c.Parent <> TempForm then
+      begin
+        TempForm.AddObject(c);
+        (AItem as TksInputListItemWithControl).FControl.ApplyStyleLookup;
+      end;
     end;
   end;
   FControlsVisible := False;
@@ -931,22 +987,68 @@ procedure TksInputList.MouseDown(Button: TMouseButton; Shift: TShiftState; X,
   Y: Single);
 var
   AItem: TksBaseInputListItem;
+  ATask: ITask;
+  ATapEvent: Boolean;
 begin
   inherited;
+  FMouseDown := True;
   HidePickers;
   y := y + VScrollBarValue;
 
   Root.SetFocused(nil);
-  FMouseDownTime := MilliSecondOfTheDay(Now);
+
   FMouseDownPos := PointF(X, Y);
   FMousePos := FMouseDownPos;
+  FMouseDownItem := nil;
+
   for AItem in FItems do
   begin
 
     if PtInRect(AItem.ItemRect, PointF(x, y)) then
     begin
-      FMouseDownItem := AItem;
-      AItem.MouseDown;
+      if AItem.Enabled then
+      begin
+        FMouseDownItem := AItem;
+        FMouseDownTime := MilliSecondOfTheDay(Now);
+        aTask := TTask.Create (procedure ()
+        begin
+          Sleep(100);
+
+          ATapEvent := ((FMousePos.Y) > (FMouseDownPos.Y - 10)) and ((FMousePos.Y) < (FMouseDownPos.Y + 10));
+          if ATapEvent then
+          begin
+            TThread.Synchronize(nil,procedure
+                        begin
+                          if FMouseDown then
+                          begin
+                            FMouseDownItem.MouseDown;
+                          end
+                          else
+                          begin
+                            FMouseDownItem.MouseDown;
+                            {$IFDEF IOS}
+                            Application.ProcessMessages;
+                            Sleep(50);
+                            {$ENDIF}
+                            FMouseDownItem.Selected := False;
+                          end;
+                        end);
+            Sleep(300);
+            if FMouseDown then
+            begin
+              // long tap event...
+              TThread.Synchronize(nil,procedure
+                          begin
+                            if Assigned(OnItemLongTapClick) then
+                              OnItemLongTapClick(Self, FMouseDownItem, FMouseDownItem.ID);
+                          end);
+            end;
+          end;
+
+        end);
+        aTask.Start;
+      end;
+
     end;
   end;
 end;
@@ -963,38 +1065,32 @@ procedure TksInputList.MouseUp(Button: TMouseButton; Shift: TShiftState; X,
 var
   ATapEvent: Boolean;
   ADelay: cardinal;
+  ATask: ITask;
 begin
   inherited;
+  FMouseDown := False;
   y := y + VScrollBarValue;
   ATapEvent := ((Y) > (FMouseDownPos.Y - 10)) and ((Y) < (FMouseDownPos.Y + 10));
   if FMouseDownItem <> nil then
   begin
+    if FMouseDownItem.Enabled = False then
+      Exit;
+    ADelay := (MilliSecondOfTheDay(Now) - FMouseDownTime);
     FMouseDownItem.MouseUp(ATapEvent);
-
     if ATapEvent then
     begin
-      ADelay := MilliSecondOfTheDay(Now);
-
-      if ADelay - FMouseDownTime > 500 then
-      begin
-        if Assigned(OnItemLongTapClick) then
-          OnItemLongTapClick(Self, FMouseDownItem, FMouseDownItem.ID);
-      end
-      else
-      begin
-
-
-        if Assigned(OnItemClick) then
-          OnItemClick(Self, FMouseDownItem, FMouseDownItem.ID);
-      end;
-
-
-
-
+      FMouseDownItem.ItemClick;
+      if Assigned(OnItemClick) then
+        OnItemClick(Self, FMouseDownItem, FMouseDownItem.ID);
     end;
-
-    FMouseDownItem := nil;
   end;
+end;
+
+procedure TksInputList.Paint;
+begin
+  if BackgroundColor <> claNull then
+    Canvas.ClearRect(ClipRect, BackgroundColor);
+  inherited;
 end;
 
 procedure TksInputList.UpdateItemRects;
@@ -1117,6 +1213,16 @@ begin
     TAnimator.AnimateFloat(Self, 'VScrollBar.Value', 0, ATime, TAnimationType.InOut, TInterpolationType.Quadratic);
 end;
 
+procedure TksInputList.SetBackgroundColor(const Value: TAlphaColor);
+begin
+  if FBackgroundColor <> Value then
+  begin
+
+    FBackgroundColor := Value;
+    Repaint;
+  end;
+end;
+
 procedure TksInputList.SetItemHeight(const Value: single);
 begin
   if FItemHeight <> Value then
@@ -1201,10 +1307,13 @@ begin
   FHeight := FksInputList.ItemHeight;
   FItemID := '';
   FBackground := claWhite;
+  FTextColor := claBlack;
+  FDetailTextColor := claBlack;
   FSelected := False;
   FShowSelection := False;
   FReadOnly := False;
   FEnabled := True;
+  FSelectedColor := $FFEAEAEA;
 end;
 
 destructor TksBaseInputListItem.Destroy;
@@ -1236,7 +1345,7 @@ begin
   ACanvas.Stroke.Thickness := 0.5;
   r := FItemRect;
 
-  InflateRect(r, 0, (ACanvas.Stroke.Thickness / 2));
+  InflateRect(r, 0, (ACanvas.Stroke.Thickness / GetScreenScale()));
 
   if ATop then ACanvas.DrawLine(r.TopLeft, PointF(r.Right, r.Top), 1);
   if ABottom then  ACanvas.DrawLine(PointF(r.Left, r.Bottom), r.BottomRight, 1);
@@ -1255,18 +1364,19 @@ begin
     ACanvas.IntersectClipRect(FItemRect);
     ACanvas.Fill.Color := FBackground;
     ACanvas.Font.Assign(FFont);
+
     if ((FSelected) and (FShowSelection)) and (not FReadOnly) and (FEnabled) then
-      ACanvas.Fill.Color := $FFEAEAEA;
+      ACanvas.Fill.Color := FSelectedColor;
 
     r := FItemRect;
     InflateRect(r, 0, 0.5);
-    //r.Bottom := r.Bottom + 1;
+
     ACanvas.FillRect(r, 0, 0, AllCorners, 1);
 
     {$IFDEF DEBUG_BOXES}
     ACanvas.Stroke.Color := claRed;
     ACanvas.Stroke.Kind := TBrushKind.Solid;
-    ACanvas.Stroke.Thickness := 2;
+    ACanvas.Stroke.Thickness := GetScreenScale;
     ACanvas.DrawRect(FContentRect, C_CORNER_RADIUS, C_CORNER_RADIUS, AllCorners, 1);
     ACanvas.Stroke.Color := claGreen;
 
@@ -1288,7 +1398,7 @@ begin
 
         ACanvas.DrawBitmap(AAcc,
                            AAccRect,
-                           RectF(0, 0, AAccRect.Width/2, AAccRect.Height/2).PlaceInto(FAccessoryRect),
+                           RectF(0, 0, AAccRect.Width/GetScreenScale, AAccRect.Height/GetScreenScale).PlaceInto(FAccessoryRect),
                            1,
                            True);
 
@@ -1307,7 +1417,7 @@ begin
       ACanvas.DrawBitmap(FImage, FImage.BoundsF, FImage.BoundsF.PlaceInto(FImageRect),1, True);
     end;
 
-    ACanvas.Fill.Color := claBlack;
+    ACanvas.Fill.Color := FTextColor;
     if Trim(FTitle) <> '' then
     begin
       ACanvas.FillText(FContentRect, FTitle, False, 1, [], TTextAlign.Leading, TTextAlign.Center);
@@ -1336,7 +1446,7 @@ end;
 
 function TksBaseInputListItem.GetDetailTextColor: TAlphaColor;
 begin
-  Result := claBlack;
+  Result := FDetailTextColor;
 end;
 
 function TksBaseInputListItem.GetHeight: Single;
@@ -1386,10 +1496,16 @@ procedure TksBaseInputListItem.MouseDown;
 var
   ATask: ITask;
 begin
+  if not FEnabled then
+    Exit;
+  if FksInputList.IsScrolling then
+    Exit;
   FMouseDown := True;
+  if FShowSelection then
+    Selected := True;
 
-  begin
-    ATask := TTask.Create (procedure ()
+
+    {ATask := TTask.Create (procedure ()
     begin
       Sleep(100);
       if FksInputList.IsScrolling then
@@ -1400,18 +1516,31 @@ begin
         begin
           if FShowSelection then
             Selected := True;
+          Application.ProcessMessages;
           ItemClick;
         end);
       end;
     end);
     ATask.Start;
-  end;
+  end;   }
 end;
 
 procedure TksBaseInputListItem.MouseUp(ATapEvent: Boolean);
 var
   ATask: ITask;
 begin
+  if FEnabled = False then
+    Exit;
+  if FMouseDown then
+  begin
+
+    FMouseDown := False;
+    if (FSelected) then
+      Selected := False;
+  end;
+
+{  if FEnabled = False then
+    Exit;
   if FMouseDown then
   begin
 
@@ -1431,7 +1560,7 @@ begin
          end);
        aTask.Start;
     end;
-
+        }
 end;
 
 procedure TksBaseInputListItem.Reset;
@@ -1478,8 +1607,11 @@ end;
 
 procedure TksBaseInputListItem.SetBackgroundColor(const Value: TAlphaColor);
 begin
-  FBackground := Value;
-  Changed;
+  if FBackground <> Value then
+  begin
+    FBackground := Value;
+    Changed;
+  end;
 end;
 
 procedure TksBaseInputListItem.SetDetail(const Value: string);
@@ -1487,6 +1619,15 @@ begin
   if FDetail <> Value then
   begin
     FDetail := Value;
+    Changed;
+  end;
+end;
+
+procedure TksBaseInputListItem.SetDetailTextColor(const Value: TAlphaColor);
+begin
+  if FDetailTextColor <> Value then
+  begin
+    FDetailTextColor := Value;
     Changed;
   end;
 end;
@@ -1519,13 +1660,34 @@ end;
 
 procedure TksBaseInputListItem.SetSelected(const Value: Boolean);
 begin
-  FSelected := Value;
-  Changed;
+  if FSelected <> Value then
+  begin
+    FSelected := Value;
+    Changed;
+  end;
+end;
+
+procedure TksBaseInputListItem.SetSelectedColor(const Value: TAlphaColor);
+begin
+  if FSelectedColor <> Value then
+  begin
+    FSelectedColor := Value;
+    Changed;
+  end;
 end;
 
 procedure TksBaseInputListItem.SetShowSelection(const Value: Boolean);
 begin
   FShowSelection := Value;
+end;
+
+procedure TksBaseInputListItem.SetTextColor(const Value: TAlphaColor);
+begin
+  if FTextColor <> Value then
+  begin
+    FTextColor := Value;
+    Changed;
+  end;
 end;
 
 procedure TksBaseInputListItem.SetTitle(const Value: string);
@@ -1818,6 +1980,14 @@ begin
   FksInputList := AForm;
 end;
 
+procedure TksInputListItems.DeselectAll;
+var
+  AItem: TksBaseInputListItem;
+begin
+  for AItem in Self do
+    AItem.Selected := False;
+end;
+
 procedure TksInputListItems.DrawToCanvas(ACanvas: TCanvas; AViewPort: TRectF);
 var
   AItem: TksBaseInputListItem;
@@ -1845,6 +2015,19 @@ begin
     end;
   end;
 
+end;
+
+function TksInputListItems.GetCheckedCount: integer;
+var
+  AItem: TksBaseInputListItem;
+begin
+  Result := 0;
+  for AItem in Self do
+  begin
+    if (AItem is TksInputListCheckBoxItem) then
+      if (AItem as TksInputListCheckBoxItem).CheckBox.IsChecked then
+      Result := Result +1;
+  end;
 end;
 
 function TksInputListItems.GetItemByID(AID: string): TksBaseInputListItem;
@@ -1882,6 +2065,8 @@ end;
 procedure TksInputListCanvas.Paint;
 begin
   inherited;
+  if (Owner as TksInputList).BackgroundColor <> claNull then
+    Canvas.Clear((Owner as TksInputList).BackgroundColor);
   (Owner as TksInputList).RedrawItems;
 end;
 
@@ -2017,14 +2202,14 @@ begin
   {$IFDEF DEBUG_BOXES}
   ACanvas.Stroke.Color := claBlack;
   ACanvas.Stroke.Kind := TBrushKind.Solid;
-  ACanvas.Stroke.Thickness := 2;
+  ACanvas.Stroke.Thickness := GetScreenScale;
   ACanvas.DrawRect(FControl.BoundsRect, C_CORNER_RADIUS, C_CORNER_RADIUS, AllCorners, 1);
   {$ENDIF}
 
   if FControl.Parent <> TempForm then
     Exit;
 
-  AScreenScale := C_SCREEN_SCALE;
+  AScreenScale := GetScreenScale;
 
   ACanvas.Stroke.Kind := TBrushKind.Solid;
   ACanvas.Stroke.Thickness := 0.5;
@@ -2346,11 +2531,23 @@ begin
 end;
 
 procedure TksInputListSelectorItem.DoSelectorChanged(Sender: TObject);
+var
+  ATask: ITask;
 begin
   if FCombo.ItemIndex > -1 then
     Value := FCombo.Items[FCombo.ItemIndex];
-  if Assigned(FksInputList.OnSelectorItemSelected) then
-    FksInputList.OnSelectorItemSelected(FksInputList, Self, ID, Value);
+  aTask := TTask.Create (procedure ()
+   begin
+      Sleep(200);
+      // Copy files here
+      TThread.Synchronize(nil, procedure
+  begin
+
+      if Assigned(FksInputList.OnSelectorItemSelected) then
+        FksInputList.OnSelectorItemSelected(FksInputList, Self, ID, Value);
+    end);
+   end);
+ aTask.Start;
 end;
 
 class function TksInputListSelectorItem.GetClassID: string;
@@ -2533,7 +2730,7 @@ end;
 
 destructor TksInputListImageItem.Destroy;
 begin
-  FImage.Free;
+  FreeAndNil(FImage);
   inherited;
 end;
 
@@ -2726,7 +2923,7 @@ begin
   FColor := claDodgerblue;
   FTextColor := claWhite;
   FCached := TBitmap.Create;
-  FCached.BitmapScale := 2;
+  FCached.BitmapScale := GetScreenScale;
   FUse24HourTime := True;
 end;
 
@@ -2773,6 +2970,7 @@ var
   r: TRectF;
   AEmojiOnly: Boolean;
   AStr: string;
+  APadding: single;
 begin
   inherited;
 
@@ -2796,25 +2994,29 @@ begin
     ATextLayout.HorizontalAlign := TTextAlign.Leading;
     ATextLayout.Padding.Rect := RectF(0, 0, 0, 0);
     ATextLayout.Trimming := TTextTrimming.None;
-    ATextLayout.TopLeft := PointF(8, 8);
+    ATextLayout.TopLeft := PointF((GetScreenScale * 4), (GetScreenScale * 4));
     if AEmojiOnly then
+      //ATextLayout.TopLeft := PointF((GetScreenScale * 4), (GetScreenScale * -2));
       ATextLayout.TopLeft := PointF(8, -4);
 
     ATextLayout.MaxSize := PointF(FksInputList.Width * 0.7, MaxSingle);
     ATextLayout.EndUpdate;
 
+
+    APadding := (GetScreenScale * 8);
     case AEmojiOnly of
-      True:  FCached.SetSize(2*(Round(ATextLayout.Width+16)), (2*(Round(ATextLayout.Height))));
-      False: FCached.SetSize(2*(Round(ATextLayout.Width+16)), (2*(Round(ATextLayout.Height+16))));
+      True:  FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height))));
+      False: FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height+APadding))));
     end;
 
     FCached.Canvas.BeginScene(nil);
     try
+      FCached.Clear(claNull);
       if AEmojiOnly = False then
       begin
         FCached.Canvas.Fill.Kind := TBrushKind.Solid;
         FCached.Canvas.Fill.Color := FColor;
-        FCached.Canvas.FillRect(RectF(0, 0, Round(FCached.Width/2), Round(FCached.Height/2)), 12, 12, AllCorners, 1);
+        FCached.Canvas.FillRect(RectF(0, 0, Round(FCached.Width/GetScreenScale), Round(FCached.Height/GetScreenScale)), 12, 12, AllCorners, 1);
       end;
       FCached.Canvas.Fill.Color := FColor;
       ATextLayout.RenderLayout(FCached.Canvas);
@@ -2836,19 +3038,20 @@ begin
   ACanvas.Font.Size := 12;
   r := FContentRect;
   r.Inflate(-4, -6);
+
   ACanvas.FillText(r, AStr, False, 1, [], FAlignment, TTextAlign.Leading);
 
 
   r := FCached.BoundsF;
-  r.Width := r.Width/2;
-  r.Height := r.Height/2;
+  r.Width := r.Width/GetScreenScale;
+  r.Height := r.Height/GetScreenScale;
+
   case FAlignment of
-    TTextAlign.Leading: OffsetRect(r, 8, FContentRect.Top+22);
-    TTextAlign.Center: OffsetRect(r, 8, FContentRect.Top+22);
-    TTextAlign.Trailing: OffsetRect(r, FContentRect.Right-r.Width, FContentRect.Top+22);
+    TTextAlign.Leading: OffsetRect(r, (GetScreenScale * 4), FContentRect.Top+(GetScreenScale * 11));
+    TTextAlign.Center: OffsetRect(r, (GetScreenScale * 4), FContentRect.Top+(GetScreenScale * 11));
+    TTextAlign.Trailing: OffsetRect(r, FContentRect.Right-r.Width, FContentRect.Top+(GetScreenScale * 11));
   end;
-  //if FSender <> '' then
-  //  OffsetRect(r, 0, 20);
+ 
 
   ACanvas.DrawBitmap(FCached, FCached.BoundsF, r, 1, True);
 end;
@@ -2949,6 +3152,8 @@ initialization
   TempForm := nil;
   AAccessoriesList := TInputListAccessoryImages.Create;
   ATextLayout :=  TTextLayoutManager.DefaultTextLayout.Create;
+  AScreenScale := 0;
+
 
 finalization
 
@@ -2957,4 +3162,6 @@ finalization
   ATextLayout.Free;
 
 end.
+
+
 
