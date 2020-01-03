@@ -143,6 +143,7 @@ begin
     ksbsGreen: SetColours($FF4BD44B, $FF2FB92F, claForestgreen, clawhite);
     ksbsRed: SetColours(claRed, $FFC90101, $FFC90101, clawhite);
     ksbsWhite: SetColours(claWhite, claGainsboro, claSilver, claDimgray);
+    ksbsBlue: SetColours(claSteelblue, $FF80ABCF, claNavy, clawhite);
   end;
 
 

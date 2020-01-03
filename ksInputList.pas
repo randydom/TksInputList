@@ -423,7 +423,7 @@ type
                             AValue: string;
                             APlaceholder: string;
                             const AKeyboard: TVirtualKeyboardType = TVirtualKeyboardType.Default): TksInputListEditItem;
-    procedure AddSwitchItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean);
+    function AddSwitchItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean): TksInputListSwitchItem;
     function AddCheckBoxItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean): TksInputListCheckBoxItem;
     procedure AddButtonItem(AID: string; AImg: TBitmap; ATitle, AButtonTitle: string);
     procedure AddTrackBar(AID: string; AImg: TBitmap; ATitle: string; APos, AMax: integer);
@@ -463,7 +463,6 @@ type
     FUpdateCount: integer;
     FLastScrollChange: TDateTime;
     FMouseDownTime: Cardinal;
-
     FMouseDownPos: TPointF;
     FMousePos: TPointF;
     FMouseDownItem: TksBaseInputListItem;
@@ -508,7 +507,8 @@ type
     procedure EndUpdate; override;
     procedure ClearItems;
     procedure Reset;
-
+    procedure EnableAll;
+    procedure DisableAll;
     procedure LoadFromJson(AJsonData: string; AStructure: Boolean; AData: Boolean); overload;
     procedure LoadFromJson(AJson: TJsonObject; AStructure: Boolean; AData: Boolean); overload;
     procedure SaveToJson(AJson: TJsonObject; AStructure: Boolean; AData: Boolean); overload;
@@ -852,6 +852,26 @@ begin
   inherited;
 end;
 
+procedure TksInputList.DisableAll;
+var
+  AItem: TksBaseInputListItem;
+begin
+  BeginUpdate;
+  for AItem in FItems do
+    AItem.Enabled := False;
+  EndUpdate;
+end;
+
+procedure TksInputList.EnableAll;
+var
+  AItem: TksBaseInputListItem;
+begin
+  BeginUpdate;
+  for AItem in FItems do
+    AItem.Enabled := True;
+  EndUpdate;
+end;
+
 procedure TksInputList.EndUpdate;
 begin
   if FUpdateCount > 0 then
@@ -1009,8 +1029,44 @@ begin
           Sleep(100);
 
           ATapEvent := ((FMousePos.Y) > (FMouseDownPos.Y - 10)) and ((FMousePos.Y) < (FMouseDownPos.Y + 10));
-          if ATapEvent then
+          TThread.Synchronize(nil,procedure
+            var
+              AItem: TksBaseInputListItem;
+            begin
+              if FMouseDown then
+              begin
+                for AItem in FItems do
+                begin
+                  if AItem.FMouseDown then
+                    AItem.MouseUp(False);
+                end;
+                FMouseDownItem.MouseDown;
+
+              end;
+              Application.ProcessMessages;
+            end
+          );
+
+
+        {aTask := TTask.Create (procedure ()
+        begin
+          Sleep(100);
+
+          ATapEvent := ((FMousePos.Y) > (FMouseDownPos.Y - 10)) and ((FMousePos.Y) < (FMouseDownPos.Y + 10));
+          TThread.Synchronize(nil,procedure
+            begin
+              if FMouseDown then
+                FMouseDownItem.MouseDown;
+            end
+          );    }
+
+
+
+          (*if ATapEvent then
           begin
+            if FMouseDown then
+            begin
+
             TThread.Synchronize(nil,procedure
                         begin
                           if FMouseDown then
@@ -1030,7 +1086,9 @@ begin
             Sleep(300);
             if FMouseDown then
             begin
+
               // long tap event...
+              FLongTap := True;
               TThread.Synchronize(nil,procedure
                           begin
                             if Assigned(OnItemLongTapClick) then
@@ -1038,7 +1096,7 @@ begin
                           end);
             end;
           end;
-
+                 *)
         end);
         aTask.Start;
       end;
@@ -1060,23 +1118,56 @@ var
   ATapEvent: Boolean;
   ADelay: cardinal;
   ATask: ITask;
+  AQuckTap: Boolean;
+  AItem: TksBaseInputListItem;
+  ALongTap: Boolean;
 begin
   inherited;
   FMouseDown := False;
   y := y + VScrollBarValue;
-  ATapEvent := ((Y) > (FMouseDownPos.Y - 10)) and ((Y) < (FMouseDownPos.Y + 10));
+  ADelay := MilliSecondOfTheDay(Now) - FMouseDownTime;
+  AQuckTap := ADelay < 200;
+  ALongTap := ADelay > 500;
+  //form11.memo1.lines.add(FMouseDownPos.Y.ToString+'  '+y.ToString);
+
+  ATapEvent := ((Y) > (FMouseDownPos.Y - 5)) and ((Y) < (FMouseDownPos.Y + 5));
   if FMouseDownItem <> nil then
   begin
     if FMouseDownItem.Enabled = False then
       Exit;
-    ADelay := (MilliSecondOfTheDay(Now) - FMouseDownTime);
-    FMouseDownItem.MouseUp(ATapEvent);
+
+    //ADelay := (MilliSecondOfTheDay(Now) - FMouseDownTime);
     if ATapEvent then
     begin
-      FMouseDownItem.ItemClick;
-      if Assigned(OnItemClick) then
-        OnItemClick(Self, FMouseDownItem, FMouseDownItem.ID);
-    end;
+      if AQuckTap then
+      begin
+        for AItem in FItems do
+        begin
+          if AItem.FMouseDown then
+            AItem.MouseUp(False);
+        end;
+
+        FMouseDownItem.MouseDown;
+        Application.ProcessMessages;
+        Sleep(50);
+      end;
+      FMouseDownItem.MouseUp(ATapEvent);
+      Application.ProcessMessages;
+
+      if ALongTap then
+      begin
+        if Assigned(FOnItemLongTap) then
+          FOnItemLongTap(Self, FMouseDownItem, FMouseDownItem.ID);
+      end
+      else
+      begin
+        FMouseDownItem.ItemClick;
+        if Assigned(OnItemClick) then
+          OnItemClick(Self, FMouseDownItem, FMouseDownItem.ID);
+      end;
+    end
+    else
+      FMouseDownItem.MouseUp(ATapEvent);
   end;
 end;
 
@@ -1327,7 +1418,7 @@ procedure TksBaseInputListItem.DrawDisabledRect(ACanvas: TCanvas);
 begin
   ACanvas.Fill.Color := claWhite;
   ACanvas.Fill.Kind := TBrushKind.Solid;
-  ACanvas.FillRect(FItemRect, 0, 0, AllCorners, 0.75);
+  ACanvas.FillRect(FItemRect, 0, 0, AllCorners, 0.5);
 end;
 
 procedure TksBaseInputListItem.DrawSeparators(ACanvas: TCanvas; ATop, ABottom: Boolean);
@@ -1432,7 +1523,10 @@ begin
   Result := 0;
   if FAccessory <> atNone then
   begin
-    Result := AAccessoriesList.ItemByAccessory[FAccessory].Bitmap.Width;
+    //Result := AAccessoriesList.ItemByAccessory[FAccessory].Bitmap.Width;
+    //{$IFDEF ANDROID}
+    Result := 20;
+    //{$ENDIF}
     if AAddPadding then
       Result := Result + 4;
   end;
@@ -1843,18 +1937,16 @@ begin
   ItemChange(Self);
 end;
 
-procedure TksInputListItems.AddSwitchItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean);
-var
-  AItem: TksInputListSwitchItem;
+function TksInputListItems.AddSwitchItem(AID: string; AImg: TBitmap; ATitle: string; AState: Boolean): TksInputListSwitchItem;
 begin
-  AItem := TksInputListSwitchItem.Create(FksInputList);
-  AItem.FItemID := AID;
-  AItem.FImage.Assign(AImg);
-  AItem.Title := ATitle;
-  AItem.Switch.IsChecked := AState;
-  AItem.Switch.OnSwitch := AItem.SwitchChange;
-  AItem.OnChange := ItemChange;
-  Add(AItem);
+  Result := TksInputListSwitchItem.Create(FksInputList);
+  Result.FItemID := AID;
+  Result.FImage.Assign(AImg);
+  Result.Title := ATitle;
+  Result.Switch.IsChecked := AState;
+  Result.Switch.OnSwitch := Result.SwitchChange;
+  Result.OnChange := ItemChange;
+  Add(Result);
   ItemChange(Self);
 end;
 
@@ -2968,6 +3060,8 @@ var
 begin
   inherited;
 
+  APadding := 8;
+
   if FCached.IsEmpty then
   begin
     AEmojiOnly := IsEmojiOnly;
@@ -2990,7 +3084,7 @@ begin
     ATextLayout.Trimming := TTextTrimming.None;
 
     //ATextLayout.TopLeft := PointF((GetScreenScale * 4), (GetScreenScale * 4));
-    ATextLayout.TopLeft := PointF(4,4);
+    ATextLayout.TopLeft := PointF(APadding, APadding);
 
     //if AEmojiOnly then
     //  ATextLayout.TopLeft := PointF(8, -4);
@@ -3000,7 +3094,7 @@ begin
 
 
     APadding := (8);
-    FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height+APadding))));
+    FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+(APadding*2))), Round(GetScreenScale*((ATextLayout.Height+(APadding*2)))));
     //case AEmojiOnly of
     //  True:  FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height))));
     //  False: FCached.SetSize(Round(GetScreenScale*(ATextLayout.Width+APadding)), Round(GetScreenScale*((ATextLayout.Height+APadding))));
