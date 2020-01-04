@@ -418,6 +418,7 @@ type
     function AddSeperator(ATitle: string; const AHeight: integer = C_DEFAULT_SEPERATOR_HEIGHT): TksInputListSeperator;
     function AddItem(AID: string; AImg: TBitmap; ATitle: string;
                      const AAccessory: TksInputAccessoryType = atNone): TksInputListItem;
+    procedure Insert(Index: Integer; const Value: TksBaseInputListItem); override;
     function AddEditBoxItem(AID: string; AImg: TBitmap;
                             ATitle: string;
                             AValue: string;
@@ -1982,6 +1983,8 @@ end;
 function TksInputListItems.AddItem(AID: string; AImg: TBitmap; ATitle: string;
   const AAccessory: TksInputAccessoryType = atNone): TksInputListItem;
 begin
+
+
   Result := TksInputListItem.Create(FksInputList);
   Result.FItemID := AID;
   Result.FImage.Assign(AImg);
@@ -1993,6 +1996,8 @@ begin
   Add(Result);
   ItemChange(Self);
 end;
+
+
 
 function TksInputListItems.AddItemSelector(AID: string; AImg: TBitmap; ATitle,
   ASelected: string; AItems: TStrings): TksInputListSelectorItem;
@@ -2130,6 +2135,13 @@ begin
       Exit;
     end;
   end;
+end;
+
+procedure TksInputListItems.Insert(Index: Integer; const Value: TksBaseInputListItem);
+begin
+  Value.OnChange := ItemChange;
+  inherited Insert(Index, Value);
+  ItemChange(Self);
 end;
 
 procedure TksInputListItems.ItemChange(Sender: TObject);
